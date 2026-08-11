@@ -149,6 +149,59 @@ test('times out rather than hanging on a stalled server', async (t) => {
   );
 });
 
+test('a server that stalls mid-body is cut off at the deadline', async (t) => {
+  // Headers arrive promptly, then the body trickles forever. Clearing the
+  // abort timer once headers land leaves this read unbounded, which lets any
+  // site pin a worker invocation indefinitely.
+  let ticker;
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.write('<html><body><p>start</p>');
+    ticker = setInterval(() => {
+      try {
+        res.write('.');
+      } catch {
+        /* closed */
+      }
+    }, 200);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    clearInterval(ticker);
+    server.close();
+  });
+
+  const startedAt = Date.now();
+  await assert.rejects(
+    () => fetchPage(`http://127.0.0.1:${server.address().port}/`, { ...ALLOW_PRIVATE, timeoutMs: 1000 }),
+    (error) => error.code === 'timeout',
+  );
+  assert.ok(Date.now() - startedAt < 5000, 'should abort near the deadline, not hang');
+});
+
+test('the timeout is a total budget, not a per-redirect one', async (t) => {
+  // Each hop is slower than nothing but faster than the timeout, so a per-hop
+  // timer would allow maxRedirects x timeoutMs of total wall time.
+  let port;
+  const server = http.createServer((req, res) => {
+    const hop = Number(req.url.slice(1)) || 0;
+    setTimeout(() => {
+      res.writeHead(302, { location: `http://127.0.0.1:${port}/${hop + 1}` });
+      res.end();
+    }, 400);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  port = server.address().port;
+  t.after(() => server.close());
+
+  const startedAt = Date.now();
+  await assert.rejects(
+    () => fetchPage(`http://127.0.0.1:${port}/0`, { ...ALLOW_PRIVATE, timeoutMs: 1000 }),
+    (error) => error.code === 'timeout',
+  );
+  assert.ok(Date.now() - startedAt < 3000, 'total elapsed should respect the single budget');
+});
+
 test('a 404 page is scored as a blocking failure', async (t) => {
   const site = await startSite();
   t.after(() => site.stop());
