@@ -28,13 +28,17 @@ OPTIONS
   --key <key>         Pro license key. Also read from CITABLE_KEY.
   --json              Output raw JSON.
   --markdown          Output a Markdown report.
-  --out <file>        Write the report to a file instead of stdout.
+  --out <file>        Write the primary output to a file instead of stdout.
+  --report <file>     Also write a Markdown report to this file, whatever the
+                      primary output format is (one audit, two artifacts).
   --min-score <n>     Exit non-zero if the score is below n (for CI).
   --fail-on <sev>     Exit non-zero on any finding at or above this severity
                       (critical|high|medium|low).
   --verbose           Include evidence in terminal output.
   --no-color          Disable ANSI colour.
   --timeout <ms>      Per-request timeout (default 15000).
+  --allow-private     Permit localhost and private addresses, so you can audit
+                      a dev server before you ship. CLI only.
   --version           Print version.
   --help              Show this help.
 
@@ -60,11 +64,16 @@ function parseArgs(argv) {
     json: false,
     markdown: false,
     out: null,
+    report: null,
     minScore: null,
     failOn: null,
     verbose: false,
     color: process.stdout.isTTY !== false && !process.env.NO_COLOR,
     timeout: 15000,
+    // Safe here in a way it is not in the hosted worker: the CLI runs on the
+    // developer's own machine, so pointing it at localhost is the intended
+    // use rather than a request-forgery vector.
+    allowPrivate: process.env.CITABLE_ALLOW_PRIVATE === '1',
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -102,6 +111,9 @@ function parseArgs(argv) {
       case '--out':
         options.out = next();
         break;
+      case '--report':
+        options.report = next();
+        break;
       case '--min-score':
         options.minScore = Number.parseInt(next(), 10);
         break;
@@ -113,6 +125,9 @@ function parseArgs(argv) {
         break;
       case '--no-color':
         options.color = false;
+        break;
+      case '--allow-private':
+        options.allowPrivate = true;
         break;
       case '--timeout':
         options.timeout = Number.parseInt(next(), 10);
@@ -176,10 +191,11 @@ async function main() {
   }
 
   const { tier } = await resolveTier(options.key);
-  const fetchOptions = { timeoutMs: options.timeout };
+  const fetchOptions = { timeoutMs: options.timeout, allowPrivate: options.allowPrivate };
   const audit = { tier, fetchOptions };
 
   let output;
+  let markdown;
   let worstScore;
   let findings = [];
 
@@ -196,15 +212,17 @@ async function main() {
       });
       worstScore = rollup.averageScore;
       findings = rollup.pages.flatMap((page) => page.issues || []);
-      output = options.json ? JSON.stringify(rollup, null, 2) : renderSiteMarkdown(rollup);
+      markdown = renderSiteMarkdown(rollup);
+      output = options.json ? JSON.stringify(rollup, null, 2) : markdown;
     } else {
       const result = await auditUrl(options.url, audit);
       worstScore = result.score;
       findings = result.issues;
+      markdown = renderMarkdown(result);
       output = options.json
         ? JSON.stringify(result, null, 2)
         : options.markdown
-          ? renderMarkdown(result)
+          ? markdown
           : renderTerminal(result, { color: options.color, verbose: options.verbose });
     }
   } catch (error) {
@@ -217,6 +235,12 @@ async function main() {
     process.stderr.write(`citable: wrote ${options.out}\n`);
   } else {
     process.stdout.write(`${output}\n`);
+  }
+
+  // A second artifact from the same audit — no extra requests to the target.
+  if (options.report && options.report !== options.out) {
+    await writeFile(options.report, markdown, 'utf8');
+    process.stderr.write(`citable: wrote ${options.report}\n`);
   }
 
   // CI gates.

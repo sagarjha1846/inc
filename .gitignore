@@ -1,0 +1,14 @@
+# The ledger of issued license keys — customer emails and key ids.
+# Never commit this.
+licenses.ndjson
+
+# Local signing secret, if you keep one in a file rather than the environment.
+.env
+.env.*
+license.private.json
+
+node_modules/
+.wrangler/
+dist/
+*.log
+.DS_Store

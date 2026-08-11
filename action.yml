@@ -1,0 +1,69 @@
+# A GitHub Action wrapper around the CLI.
+#
+# This is a distribution channel as much as a feature: teams that add an AI
+# visibility gate to CI see the score on every pull request, which is the
+# habit that turns a one-off audit into a renewal.
+
+name: 'Citable — AI visibility audit'
+description: 'Fail the build when AI answer engines cannot crawl, read or cite your pages.'
+author: 'Citable'
+branding:
+  icon: 'search'
+  color: 'green'
+
+inputs:
+  url:
+    description: 'URL to audit.'
+    required: true
+  min-score:
+    description: 'Fail if the score falls below this (0-100).'
+    required: false
+    default: '70'
+  fail-on:
+    description: 'Fail on any finding at or above this severity (critical|high|medium|low). Empty disables.'
+    required: false
+    default: 'critical'
+  site:
+    description: 'Audit multiple pages discovered from the sitemap.'
+    required: false
+    default: 'false'
+  limit:
+    description: 'Max pages when site mode is on.'
+    required: false
+    default: '20'
+  key:
+    description: 'Pro license key. Store it as a repository secret.'
+    required: false
+    default: ''
+  report:
+    description: 'Path to write a Markdown report to. Empty writes none.'
+    required: false
+    default: ''
+
+outputs:
+  score:
+    description: 'The audit score out of 100.'
+    value: ${{ steps.audit.outputs.score }}
+
+runs:
+  using: composite
+  steps:
+    - id: audit
+      shell: bash
+      env:
+        CITABLE_KEY: ${{ inputs.key }}
+      run: |
+        set -o pipefail
+        args=("${{ inputs.url }}" --json --no-color)
+        [ "${{ inputs.site }}" = "true" ] && args+=(--site --limit "${{ inputs.limit }}")
+        [ -n "${{ inputs.report }}" ] && args+=(--report "${{ inputs.report }}")
+        [ -n "${{ inputs.min-score }}" ] && args+=(--min-score "${{ inputs.min-score }}")
+        [ -n "${{ inputs.fail-on }}" ] && args+=(--fail-on "${{ inputs.fail-on }}")
+
+        node "${{ github.action_path }}/bin/citable.js" "${args[@]}" > citable-result.json || status=$?
+        # Read from stdin so this works whether the action package resolves as
+        # ESM or CommonJS.
+        score=$(node -e 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{const r=JSON.parse(s);console.log(r.score??r.averageScore??0)})' < citable-result.json)
+        echo "score=$score" >> "$GITHUB_OUTPUT"
+        echo "### AI visibility score: $score/100" >> "$GITHUB_STEP_SUMMARY"
+        exit "${status:-0}"

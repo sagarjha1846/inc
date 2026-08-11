@@ -1,0 +1,28 @@
+# Cloudflare Workers deployment.
+#
+# This fits inside the Workers free tier (100k requests/day), which is the
+# whole point: the product costs nothing to run until it earns something.
+#
+#   npx wrangler login
+#   npx wrangler secret put LICENSE_SECRET     # random 32+ chars, never commit
+#   npx wrangler deploy
+#
+# CHECKOUT_URL is the payment link buyers are sent to. It is not a secret.
+
+name = "citable"
+main = "src/worker/index.js"
+compatibility_date = "2026-01-01"
+workers_dev = true
+
+[vars]
+CHECKOUT_URL = "https://gumroad.com/l/CHANGE-ME"
+
+# Optional: a KV namespace upgrades rate limiting from per-isolate to global.
+# The free tier covers 100k reads and 1k writes a day, which is plenty.
+#
+# [[kv_namespaces]]
+# binding = "RATE"
+# id = "CHANGE-ME"
+
+[observability]
+enabled = true
