@@ -113,6 +113,31 @@ export function generateLlmsTxt(ctx) {
   return lines.join('\n');
 }
 
+
+/**
+ * Serialise a JSON-LD payload for embedding in an HTML `<script>` block.
+ *
+ * The generated markup is meant to be pasted into the reader's own `<head>`,
+ * and it carries text taken from the audited page — a title, a description.
+ * A page whose title contains `&lt;/script&gt;` decodes to a literal
+ * `</script>`, which closes the block early and turns everything after it into
+ * live markup on the pasting site. The tool would be handing someone an attack
+ * payload with instructions to install it in production.
+ *
+ * Escaping `<` also covers `<!--` and `<script`; `>` and `&` are escaped for
+ * the same reason, and the line separators because they are literal newlines
+ * inside a JavaScript string. All four are valid JSON escapes, so the output
+ * still parses as JSON anywhere it is used.
+ */
+function toEmbeddedJson(payload) {
+  return JSON.stringify(payload, null, 2)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 /**
  * A JSON-LD block for the page, reusing whatever is already declared so the
  * output is a merge rather than a replacement.
@@ -164,7 +189,7 @@ export function generateJsonLd(ctx) {
   }
 
   const payload = { '@context': 'https://schema.org', '@graph': graph };
-  const json = JSON.stringify(payload, null, 2);
+  const json = toEmbeddedJson(payload);
   return {
     note: 'Paste inside <head>. Replace every CHANGE-ME before shipping.',
     json,
@@ -197,7 +222,7 @@ export function generateFaqSchema(ctx) {
   }
 
   const payload = { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: entities };
-  const json = JSON.stringify(payload, null, 2);
+  const json = toEmbeddedJson(payload);
   return {
     note: `Built from ${entities.length} question heading(s). Answers are lifted from the page — review them before shipping.`,
     json,
