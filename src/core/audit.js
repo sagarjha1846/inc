@@ -7,7 +7,7 @@
  */
 
 import { fetchOptional, fetchPage, normalizeUrl } from './fetch.js';
-import { runChecks } from './checks.js';
+import { runChecks, SEVERITY_ORDER } from './checks.js';
 import { prioritize, scoreFindings } from './score.js';
 import { generateAll } from './generate.js';
 
@@ -103,16 +103,24 @@ export async function auditUrl(input, options = {}) {
  * crawler is the difference between a useful tool and an abusive one.
  */
 export async function auditSite(urls, options = {}) {
-  const { concurrency = 1, delayMs = 400, onProgress } = options;
+  const { concurrency = 1, delayMs = 400, onProgress, tier = 'free' } = options;
   const targets = [...new Set(urls)];
   const pages = [];
+
+  // Every page is audited in full, whatever tier the caller is on, because the
+  // site-level analysis is only meaningful over complete findings: an issue
+  // that ranks top-three on one page and fourth on another would otherwise be
+  // counted as affecting one page rather than two, and the report would state
+  // that wrong number as fact. The tier is applied once, below, to what is
+  // *shown* — which is where it belongs.
+  const pageOptions = { ...options, tier: 'pro' };
 
   for (let i = 0; i < targets.length; i += concurrency) {
     const batch = targets.slice(i, i + concurrency);
     const settled = await Promise.all(
       batch.map(async (target) => {
         try {
-          return await auditUrl(target, options);
+          return await auditUrl(target, pageOptions);
         } catch (error) {
           return { url: target, error: (error && error.message) || 'audit failed', code: (error && error.code) || 'error', score: null };
         }
@@ -143,13 +151,35 @@ export async function auditSite(urls, options = {}) {
     }
   }
 
+  const ranked = [...recurrence.values()].sort((a, b) => {
+    const bySpread = b.pages - a.pages;
+    return bySpread !== 0 ? bySpread : SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity);
+  });
+
+  // Now apply the tier, to the presentation only. Counts on everything shown
+  // are computed from the complete findings above, so they are correct; what
+  // the free tier changes is how many of them are listed.
+  const isPro = tier === 'pro';
+  if (!isPro) {
+    for (const page of scoredPages) {
+      page.tier = 'free';
+      page.issues = page.issues.slice(0, FREE_ISSUE_LIMIT);
+      page.issuesWithheld = Math.max(0, page.issuesTotal - FREE_ISSUE_LIMIT);
+      page.passes = [];
+      delete page.generated;
+    }
+  }
+
   return {
+    tier: isPro ? 'pro' : 'free',
     pagesAudited: scoredPages.length,
     pagesFailed: pages.length - scoredPages.length,
     averageScore: average,
     worst: scoredPages.slice().sort((a, b) => a.score - b.score)[0] || null,
     best: scoredPages.slice().sort((a, b) => b.score - a.score)[0] || null,
-    sitewideIssues: [...recurrence.values()].sort((a, b) => b.pages - a.pages),
+    sitewideIssues: isPro ? ranked : ranked.slice(0, FREE_ISSUE_LIMIT),
+    sitewideIssuesTotal: ranked.length,
+    sitewideIssuesWithheld: isPro ? 0 : Math.max(0, ranked.length - FREE_ISSUE_LIMIT),
     pages,
   };
 }

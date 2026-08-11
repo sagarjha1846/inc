@@ -166,6 +166,15 @@ export function renderSiteMarkdown(rollup, options = {}) {
       lines.push(`| ${issue.title} | ${SEVERITY_LABEL[issue.severity]} | ${issue.pages} | ${issue.fix || '—'} |`);
     }
     lines.push('');
+    if (rollup.sitewideIssuesWithheld > 0) {
+      // Without this the reader takes the table above for the whole list and
+      // works through it believing the template is then clean.
+      lines.push(
+        `> Showing ${rollup.sitewideIssues.length} of ${rollup.sitewideIssuesTotal} template-level issues. ` +
+          `${rollup.sitewideIssuesWithheld} more are included in ${brand} Pro.`,
+      );
+      lines.push('');
+    }
   }
 
   lines.push('## Pages');
@@ -576,7 +585,12 @@ export function renderSiteHtml(rollup, options = {}) {
     <tbody>
 ${templateRows}
     </tbody>
-  </table></div>`
+  </table></div>
+  ${
+    rollup.sitewideIssuesWithheld > 0
+      ? `<p class="withheld">Showing ${rollup.sitewideIssues.length} of ${rollup.sitewideIssuesTotal} template-level issues. ${rollup.sitewideIssuesWithheld} more are included in ${escapeHtml(brand)} Pro.</p>`
+      : ''
+  }`
       : ''
   }
 

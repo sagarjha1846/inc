@@ -152,7 +152,7 @@ test('a report with no robots.txt explains that nothing is blocked', async () =>
 /* ------------------------------------------------- whole-site HTML report */
 
 import { auditSite, urlsFromSitemap } from '../src/core/audit.js';
-import { renderSiteHtml } from '../src/core/report.js';
+import { renderSiteHtml, renderSiteMarkdown } from '../src/core/report.js';
 
 /** A small site where one shared template carries the same defect everywhere. */
 async function startSite() {
@@ -270,4 +270,46 @@ test('page-controlled URLs and errors are escaped in the site report', () => {
   assert.doesNotMatch(html, /<b>/i, 'no markup may be injected via a fix string');
   assert.match(html, /&lt;script&gt;/, 'the payload should survive as escaped text');
   assert.match(html, /&lt;img src=x onerror=alert\(2\)&gt;/, 'the error text should be fully escaped');
+});
+
+test('the site rollup counts recurrence over complete findings, whatever the tier', async (t) => {
+  const site = await startSite();
+  t.after(() => site.stop());
+  const urls = await urlsFromSitemap(site.origin, { limit: 10, fetchOptions: ALLOW_PRIVATE });
+
+  const pro = await auditSite(urls, { tier: 'pro', delayMs: 0, fetchOptions: ALLOW_PRIVATE });
+  const free = await auditSite(urls, { tier: 'free', delayMs: 0, fetchOptions: ALLOW_PRIVATE });
+
+  // The free tier limits what is listed, never what is measured. An issue
+  // ranking top-three on one page and fourth on another must not be counted as
+  // affecting fewer pages than it does.
+  assert.equal(free.sitewideIssuesTotal, pro.sitewideIssues.length);
+  assert.ok(free.sitewideIssuesWithheld > 0, 'this fixture has more issues than the free limit');
+  assert.equal(free.sitewideIssues.length, pro.sitewideIssues.length - free.sitewideIssuesWithheld);
+
+  for (const shown of free.sitewideIssues) {
+    const full = pro.sitewideIssues.find((issue) => issue.id === shown.id);
+    assert.equal(shown.pages, full.pages, `${shown.id} pages-affected must match the full audit`);
+  }
+
+  // The paid detail still has to be withheld.
+  for (const page of free.pages) {
+    assert.ok(page.issues.length <= 3);
+    assert.equal(page.generated, undefined);
+  }
+});
+
+test('a partial template list says so instead of reading as complete', async (t) => {
+  const site = await startSite();
+  t.after(() => site.stop());
+  const urls = await urlsFromSitemap(site.origin, { limit: 10, fetchOptions: ALLOW_PRIVATE });
+  const free = await auditSite(urls, { tier: 'free', delayMs: 0, fetchOptions: ALLOW_PRIVATE });
+
+  // "Do these first" over a truncated table invites the reader to work through
+  // it and believe the template is then clean.
+  const markdown = renderSiteMarkdown(free);
+  assert.match(markdown, new RegExp(`Showing 3 of ${free.sitewideIssuesTotal} template-level issues`));
+
+  const html = renderSiteHtml(free);
+  assert.match(html, new RegExp(`Showing 3 of ${free.sitewideIssuesTotal} template-level issues`));
 });
