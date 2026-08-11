@@ -40,8 +40,15 @@ information. "Here is your `llms.txt`, built from your own page, paste it at
 
 Why one-time rather than subscription: a subscription needs a reason to renew, and a
 site's AI visibility does not change weekly. One-time removes the churn conversation
-entirely and converts better on a cold audience. Revisit if the CI gate turns out to be
-the sticky feature — that *is* a recurring-value shape.
+entirely and converts better on a cold audience.
+
+The one thing that would justify recurring pricing is regression monitoring, which now
+exists (`--baseline` / `--fail-on-regression`). Its value is genuinely continuous: a
+`robots.txt` edit that removes you from Perplexity throws no error and fails no test,
+so the only way to catch it is to keep checking. If teams adopt the CI gate, that is
+the signal to build a paid recurring tier around it — and the free tier deliberately
+includes score and crawler-access regression alerts, because the alert has to be
+trusted before anyone pays for a deeper version of it.
 
 ### 2. Done-for-you audits — $300–800
 

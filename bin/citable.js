@@ -11,6 +11,7 @@ import process from 'node:process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { auditSite, auditUrl, urlsFromSitemap } from '../src/core/audit.js';
 import { renderHtml, renderMarkdown, renderSiteMarkdown, renderTerminal } from '../src/core/report.js';
+import { compareAudits, renderComparison, renderComparisonMarkdown } from '../src/core/compare.js';
 import { tierFor } from '../src/core/license.js';
 
 const VERSION = '0.1.0';
@@ -41,6 +42,10 @@ REPORT BRANDING (for HTML reports you hand to a client)
   --accent <color>    Accent colour, any CSS colour (default #0d9488).
   --prepared-for <s>  Client name, shown under the page URL.
   --prepared-by <s>   Your name or agency, shown under the page URL.
+  --baseline <file>   Compare against an earlier --json result and report what
+                      changed: score movement, new and fixed findings, and any
+                      crawler that went from allowed to blocked.
+  --fail-on-regression  Exit non-zero if the comparison shows a regression.
   --min-score <n>     Exit non-zero if the score is below n (for CI).
   --fail-on <sev>     Exit non-zero on any finding at or above this severity
                       (critical|high|medium|low).
@@ -57,6 +62,10 @@ EXAMPLES
   citable https://example.com/pricing --verbose
   citable example.com --site --limit 30 --markdown --out audit.md
   citable example.com --min-score 80          # fails the build below 80
+
+  # Catch regressions between deploys
+  citable example.com --json --out baseline.json
+  citable example.com --baseline baseline.json --fail-on-regression
 
   # A branded HTML report to hand a client
   citable client.com --html --out audit.html \\
@@ -84,6 +93,8 @@ function parseArgs(argv) {
     accent: '#0d9488',
     preparedFor: null,
     preparedBy: null,
+    baseline: null,
+    failOnRegression: false,
     minScore: null,
     failOn: null,
     verbose: false,
@@ -147,6 +158,12 @@ function parseArgs(argv) {
         break;
       case '--report':
         options.report = next();
+        break;
+      case '--baseline':
+        options.baseline = next();
+        break;
+      case '--fail-on-regression':
+        options.failOnRegression = true;
         break;
       case '--min-score':
         options.minScore = Number.parseInt(next(), 10);
@@ -231,6 +248,7 @@ async function main() {
   let output;
   let markdown;
   let html = null;
+  let diff = null;
   let worstScore;
   let findings = [];
 
@@ -254,6 +272,25 @@ async function main() {
       const result = await auditUrl(options.url, audit);
       worstScore = result.score;
       findings = result.issues;
+
+      // Baseline mode replaces the normal single-page output: what the caller
+      // asked for is the delta, not another snapshot.
+      if (options.baseline) {
+        let previous;
+        try {
+          previous = JSON.parse(await readFile(options.baseline, 'utf8'));
+        } catch (error) {
+          process.stderr.write(`citable: could not read baseline ${options.baseline}: ${error.message}\n`);
+          process.exit(2);
+        }
+        diff = compareAudits(previous, result);
+        markdown = renderComparisonMarkdown(diff);
+        output = options.json
+          ? JSON.stringify(diff, null, 2)
+          : options.markdown
+            ? markdown
+            : renderComparison(diff, { color: options.color });
+      } else {
       const branding = {
         brand: options.brand,
         accent: options.accent,
@@ -269,6 +306,7 @@ async function main() {
           : options.markdown
             ? markdown
             : renderTerminal(result, { color: options.color, verbose: options.verbose });
+      }
     }
   } catch (error) {
     process.stderr.write(`citable: ${(error && error.message) || error}\n`);
@@ -296,6 +334,16 @@ async function main() {
   }
 
   // CI gates.
+  if (options.failOnRegression) {
+    if (!diff) {
+      process.stderr.write('citable: --fail-on-regression needs --baseline <file>\n');
+      process.exit(2);
+    }
+    if (diff.regressed) {
+      process.stderr.write(`citable: ${diff.summary}\n`);
+      process.exit(1);
+    }
+  }
   if (options.minScore !== null && worstScore < options.minScore) {
     process.stderr.write(`citable: score ${worstScore} is below the required ${options.minScore}\n`);
     process.exit(1);

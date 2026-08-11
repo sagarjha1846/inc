@@ -110,6 +110,31 @@ Fail the build when a deploy would make you less citable:
 npx citable https://yoursite.com --min-score 80 --fail-on critical
 ```
 
+### Catching regressions
+
+An absolute score tells you where you stand. What usually matters more is whether
+today's change made things worse — particularly a `robots.txt` edit, which breaks
+nothing, fails no test, and silently removes you from an answer engine:
+
+```bash
+# Record a baseline once
+npx citable yoursite.com --json --out baseline.json
+
+# On every deploy, compare against it
+npx citable yoursite.com --baseline baseline.json --fail-on-regression
+```
+
+```
+78/100 → 75/100 ▼ -3
+
+Regression: this page is no longer reachable by ChatGPT Search, Perplexity.
+A robots.txt change removed it from those answers.
+
+Crawler access changes
+  ✗ OAI-SearchBot (ChatGPT Search): allowed → blocked — Disallow: /
+  ✗ PerplexityBot (Perplexity): allowed → blocked — Disallow: /
+```
+
 Or use the action:
 
 ```yaml
@@ -117,7 +142,9 @@ Or use the action:
   with:
     url: https://yoursite.com
     min-score: '80'
-    report: audit.md
+    baseline: baseline.json      # optional
+    fail-on-regression: 'true'
+    report: audit.html
 ```
 
 ### As a library
@@ -145,7 +172,8 @@ Zero dependencies. Runs on Node 20+, Cloudflare Workers, Deno and Bun — nothin
 | Generated JSON-LD and FAQPage schema | — | ✅ |
 | Whole-site crawl and Markdown reports | — | ✅ |
 | White-labelled HTML client reports | — | ✅ |
-| CI gating | — | ✅ |
+| CI gating and score/crawler regression alerts | ✅ | ✅ |
+| Finding-level regression diff | — | ✅ |
 
 The generators are the point of Pro: they emit the actual files, filled in with what
 was found on your page, so the fix is a paste rather than a project.
@@ -172,7 +200,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, and
 ## Development
 
 ```bash
-node --test "test/*.test.js"   # 67 tests, no install step
+node --test "test/*.test.js"   # 78 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```

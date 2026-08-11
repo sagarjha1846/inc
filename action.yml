@@ -36,14 +36,25 @@ inputs:
     required: false
     default: ''
   report:
-    description: 'Path to write a Markdown report to. Empty writes none.'
+    description: 'Path to write a report to. A .html extension gives an HTML report, anything else Markdown. Empty writes none.'
     required: false
     default: ''
+  baseline:
+    description: 'Path to a previous --json result. When set, the run reports what changed instead of a fresh snapshot.'
+    required: false
+    default: ''
+  fail-on-regression:
+    description: 'Fail the build if the comparison against the baseline shows a regression. Requires baseline.'
+    required: false
+    default: 'false'
 
 outputs:
   score:
     description: 'The audit score out of 100.'
     value: ${{ steps.audit.outputs.score }}
+  regressed:
+    description: 'true when a baseline was supplied and the comparison showed a regression.'
+    value: ${{ steps.audit.outputs.regressed }}
 
 runs:
   using: composite
@@ -57,13 +68,28 @@ runs:
         args=("${{ inputs.url }}" --json --no-color)
         [ "${{ inputs.site }}" = "true" ] && args+=(--site --limit "${{ inputs.limit }}")
         [ -n "${{ inputs.report }}" ] && args+=(--report "${{ inputs.report }}")
+        [ -n "${{ inputs.baseline }}" ] && args+=(--baseline "${{ inputs.baseline }}")
+        [ "${{ inputs.fail-on-regression }}" = "true" ] && args+=(--fail-on-regression)
         [ -n "${{ inputs.min-score }}" ] && args+=(--min-score "${{ inputs.min-score }}")
         [ -n "${{ inputs.fail-on }}" ] && args+=(--fail-on "${{ inputs.fail-on }}")
 
         node "${{ github.action_path }}/bin/citable.js" "${args[@]}" > citable-result.json || status=$?
         # Read from stdin so this works whether the action package resolves as
         # ESM or CommonJS.
-        score=$(node -e 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{const r=JSON.parse(s);console.log(r.score??r.averageScore??0)})' < citable-result.json)
+        # In baseline mode the JSON is a comparison, not an audit, so read
+        # whichever shape came back.
+        read -r score regressed <<< "$(node -e 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{const r=JSON.parse(s);console.log((r.currentScore??r.score??r.averageScore??0)+" "+(r.regressed===true))})' < citable-result.json)"
         echo "score=$score" >> "$GITHUB_OUTPUT"
-        echo "### AI visibility score: $score/100" >> "$GITHUB_STEP_SUMMARY"
+        echo "regressed=$regressed" >> "$GITHUB_OUTPUT"
+        if [ -n "${{ inputs.baseline }}" ]; then
+          # Render the comparison into the job summary so reviewers see what
+          # changed without opening the artifact.
+          node --input-type=module -e '
+            import { renderComparisonMarkdown } from "${{ github.action_path }}/src/core/compare.js";
+            import { readFileSync } from "node:fs";
+            process.stdout.write(renderComparisonMarkdown(JSON.parse(readFileSync("citable-result.json", "utf8"))));
+          ' >> "$GITHUB_STEP_SUMMARY" || echo "### AI visibility: $score/100 (regressed: $regressed)" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "### AI visibility score: $score/100" >> "$GITHUB_STEP_SUMMARY"
+        fi
         exit "${status:-0}"
