@@ -46,6 +46,37 @@ test('visibleText drops scripts and styles but keeps prose', () => {
   assert.doesNotMatch(text, /color:red/);
 });
 
+test('an unclosed script does not leak JavaScript as prose', () => {
+  // A real parser consumes the rest of the document as script content, so a
+  // crawler sees nothing after it. Counting it would let an empty SPA shell
+  // with an unclosed <script> read as hundreds of words and flip the
+  // "content is JS-rendered" finding from critical to a pass.
+  const shell = `<body><div id="root"></div><script>${'var padding = "word word word"; '.repeat(40)}</body>`;
+  assert.equal(wordCount(visibleText(shell)), 0);
+
+  // Content *before* the unclosed tag is still visible, because it is.
+  assert.equal(wordCount(visibleText('<body><p>one two three four</p><script>junk junk junk')), 4);
+
+  // The same applies to any element parsed as raw text.
+  assert.equal(wordCount(visibleText(`<body><p>visible</p><style>${'a{color:red} '.repeat(50)}`)), 1);
+});
+
+test('noscript content counts, because a non-JS crawler can read it', () => {
+  // Scripting disabled is exactly the condition these crawlers are in, and the
+  // spec says noscript content is then parsed as ordinary markup. Stripping it
+  // would penalise a site for shipping the fallback that makes it readable.
+  const withFallback = `<body><div id="root"></div><noscript><p>${'Real fallback content here. '.repeat(10)}</p></noscript></body>`;
+  assert.equal(wordCount(visibleText(withFallback)), 40);
+});
+
+test('a closing tag inside a script string ends the script, as a browser would', () => {
+  // Not a bug to fix: `</script>` inside a JS string literal genuinely
+  // terminates the element, which is why authors must escape it. What follows
+  // is text to a real parser, so it is text to us.
+  const html = '<body><script>var s = "</script>"; trailing words here</body>';
+  assert.match(visibleText(html), /trailing words here/);
+});
+
 test('visibleText preserves block boundaries as newlines', () => {
   const text = visibleText('<p>One</p><p>Two</p>');
   assert.equal(text, 'One\nTwo');

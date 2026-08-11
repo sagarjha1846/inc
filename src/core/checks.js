@@ -332,7 +332,13 @@ function checkContent(ctx) {
   ctx.words = words;
 
   // JS dependence: the defining failure mode for SPA marketing sites.
-  const scriptBytes = (html.match(/<script\b[\s\S]*?<\/script\s*>/gi) || []).join('').length;
+  // Measured by subtraction so an unclosed <script> — which a parser treats as
+  // running to the end of the document — is counted rather than reported as
+  // 0% script in the evidence shown to the user.
+  const withoutScripts = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<script\b[^>]*>[\s\S]*$/i, '');
+  const scriptBytes = html.length - withoutScripts.length;
   const scriptRatio = html.length ? scriptBytes / html.length : 0;
   const mountShell = /<div[^>]+id=["'](root|app|__next|__nuxt|svelte)["'][^>]*>\s*<\/div>/i.test(html);
   ctx.scriptRatio = scriptRatio;

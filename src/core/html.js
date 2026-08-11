@@ -99,7 +99,15 @@ export function findTags(html, tagName) {
   return out;
 }
 
-const REMOVABLE_BLOCKS = ['script', 'style', 'noscript', 'template', 'svg', 'iframe', 'canvas'];
+/**
+ * Elements whose content is never prose to a reader.
+ *
+ * `noscript` is deliberately absent. When scripting is disabled — which is
+ * exactly the condition a non-JS crawler is in — the HTML spec says noscript
+ * content is parsed and shown as ordinary markup. Stripping it would penalise
+ * a site for shipping the very fallback that makes it readable.
+ */
+const REMOVABLE_BLOCKS = ['script', 'style', 'template', 'svg', 'iframe', 'canvas'];
 
 /** Remove elements whose content a reader never sees as prose. */
 export function stripNonContent(html) {
@@ -107,6 +115,13 @@ export function stripNonContent(html) {
   for (const tag of REMOVABLE_BLOCKS) {
     out = out.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}\\s*>`, 'gi'), ' ');
     out = out.replace(new RegExp(`<${tag}\\b[^>]*/>`, 'gi'), ' ');
+    // Whatever opening tag survives the pass above was never closed. A real
+    // parser consumes the rest of the document as that element's content, so
+    // the text after it is invisible to a crawler. Counting it as prose would
+    // let an unclosed <script> in an empty SPA shell read as hundreds of words
+    // of content and turn the flagship "content is JS-rendered" finding from
+    // critical into a pass.
+    out = out.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, 'i'), ' ');
   }
   out = out.replace(/<!--[\s\S]*?-->/g, ' ');
   return out;
