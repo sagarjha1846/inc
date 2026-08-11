@@ -421,6 +421,201 @@ ${findingBlocks || '<p>No open findings — every check passed.</p>'}
 `;
 }
 
+/**
+ * A self-contained HTML report for a whole-site audit.
+ *
+ * An agency engagement covers a site, not a page, so this is the deliverable
+ * that tier actually ships. It leads with the template-level issues, because
+ * an issue appearing on twenty pages is one fix in a shared layout rather than
+ * twenty pieces of work — that prioritisation is most of what the client is
+ * paying for.
+ */
+export function renderSiteHtml(rollup, options = {}) {
+  const {
+    brand = 'Citable',
+    accent = '#0d9488',
+    preparedFor = null,
+    preparedBy = null,
+  } = options;
+
+  const audited = rollup.pages.filter((page) => typeof page.score === 'number');
+  const failed = rollup.pages.filter((page) => typeof page.score !== 'number');
+  const scoreColor = (score) => (score >= 80 ? '#15803d' : score >= 60 ? '#b45309' : '#b91c1c');
+
+  const circumference = 2 * Math.PI * 54;
+  const dashOffset = circumference * (1 - rollup.averageScore / 100);
+
+  const templateRows = rollup.sitewideIssues
+    .map(
+      (issue) => `<tr>
+      <td><strong>${escapeHtml(issue.title)}</strong></td>
+      <td><span class="pill sev-${escapeHtml(issue.severity)}">${escapeHtml(SEVERITY_WORD[issue.severity] || issue.severity)}</span></td>
+      <td class="num">${issue.pages}<span class="of">/${audited.length}</span></td>
+      <td>${escapeHtml(issue.fix || '—')}</td>
+    </tr>`,
+    )
+    .join('\n');
+
+  const pageRows = [...audited]
+    .sort((a, b) => a.score - b.score)
+    .map((page) => {
+      const blockedCitation = (page.crawlers || [])
+        .filter((crawler) => !crawler.allowed && crawler.purpose !== 'training')
+        .map((crawler) => crawler.token);
+      return `<tr>
+      <td class="mono url">${escapeHtml(page.url)}</td>
+      <td class="num" style="color:${scoreColor(page.score)}"><strong>${page.score}</strong><span class="of">/100</span></td>
+      <td>${escapeHtml(page.grade)}</td>
+      <td class="num">${page.issuesTotal}</td>
+      <td class="${blockedCitation.length ? 'bad' : 'ok'}">${blockedCitation.length ? escapeHtml(blockedCitation.join(', ')) : 'none'}</td>
+    </tr>`;
+    })
+    .join('\n');
+
+  const failedRows = failed.length
+    ? `<h2>Could not be fetched</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>URL</th><th>Reason</th></tr></thead>
+    <tbody>${failed
+      .map((page) => `<tr><td class="mono url">${escapeHtml(page.url)}</td><td>${escapeHtml(page.error || 'unknown')}</td></tr>`)
+      .join('\n')}</tbody>
+  </table></div>`
+    : '';
+
+  const worst = rollup.worst;
+  const best = rollup.best;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site AI Visibility Audit — ${escapeHtml(audited.length ? new URL(audited[0].url).hostname : 'site')}</title>
+<style>
+  :root { --accent:${accent}; --ink:#16202b; --muted:#5c6675; --line:#e2e7ee; --panel:#f7f9fb; }
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);line-height:1.62;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px;-webkit-font-smoothing:antialiased}
+  .page{max-width:880px;margin:0 auto;padding:48px 28px 72px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em}
+  .url{word-break:break-all;max-width:340px}
+  .brandbar{display:flex;justify-content:space-between;align-items:baseline;
+    border-bottom:2px solid var(--accent);padding-bottom:10px;margin-bottom:28px;flex-wrap:wrap;gap:8px}
+  .brandbar .name{font-weight:700;letter-spacing:.16em;text-transform:uppercase;font-size:12px;color:var(--accent)}
+  .brandbar .date{font-size:12px;color:var(--muted)}
+  h1{font-size:25px;line-height:1.25;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 26px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);
+    margin:40px 0 14px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+  p{margin:0 0 10px}
+  .lede{color:var(--muted);margin-bottom:16px}
+  .hero{display:flex;gap:26px;align-items:center;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;padding:22px;flex-wrap:wrap}
+  .hero .verdict{flex:1 1 300px;min-width:0}
+  .hero .verdict p{margin:0;font-size:17px;font-weight:600;line-height:1.45}
+  .facts{margin-top:12px;font-size:13px;color:var(--muted)}
+  .facts span{display:inline-block;margin-right:16px;white-space:nowrap}
+  table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600}
+  .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .num .of{color:var(--muted);font-weight:400}
+  .scroll{overflow-x:auto}
+  .ok{color:#15803d} .bad{color:#b91c1c;font-weight:600}
+  .pill{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;
+    padding:3px 8px;border-radius:5px;background:#eef2f7;color:var(--muted);white-space:nowrap}
+  .sev-critical,.sev-high{background:#fdeaea;color:#b91c1c}
+  .sev-medium{background:#fdf1e0;color:#b45309}
+  .sev-low{background:#e8f0fe;color:#2563eb}
+  footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+  @media print{ .page{padding:0;max-width:none} body{font-size:11pt} h2{page-break-after:avoid} tr{page-break-inside:avoid} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="brandbar">
+    <span class="name">${escapeHtml(brand)} — Site AI Visibility Audit</span>
+    <span class="date">${escapeHtml(new Date().toUTCString())}</span>
+  </div>
+
+  <h1>Can AI answer engines cite this site?</h1>
+  <p class="sub">${audited.length} page(s) audited${preparedFor ? ` · Prepared for ${escapeHtml(preparedFor)}` : ''}${
+    preparedBy ? ` · by ${escapeHtml(preparedBy)}` : ''
+  }</p>
+
+  <div class="hero">
+    <svg width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Average score ${rollup.averageScore} out of 100">
+      <circle cx="64" cy="64" r="54" fill="none" stroke="#e8edf3" stroke-width="11"/>
+      <circle cx="64" cy="64" r="54" fill="none" stroke="${scoreColor(rollup.averageScore)}" stroke-width="11"
+        stroke-linecap="round" stroke-dasharray="${circumference.toFixed(1)}" stroke-dashoffset="${dashOffset.toFixed(1)}"
+        transform="rotate(-90 64 64)"/>
+      <text x="64" y="61" text-anchor="middle" font-size="31" font-weight="700" fill="#16202b"
+        font-family="system-ui,sans-serif">${rollup.averageScore}</text>
+      <text x="64" y="80" text-anchor="middle" font-size="11" fill="#5c6675"
+        font-family="system-ui,sans-serif">site average</text>
+    </svg>
+    <div class="verdict">
+      <p>${escapeHtml(siteVerdict(rollup, audited))}</p>
+      <div class="facts">
+        <span>${audited.length} pages audited</span>
+        ${failed.length ? `<span>${failed.length} unreachable</span>` : ''}
+        ${worst ? `<span>Lowest ${worst.score}/100</span>` : ''}
+        ${best ? `<span>Highest ${best.score}/100</span>` : ''}
+      </div>
+    </div>
+  </div>
+
+  ${
+    templateRows
+      ? `<h2>Fix these first — they repeat across pages</h2>
+  <p class="lede">An issue on many pages usually lives in one shared template, so a single change moves every page at once.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Issue</th><th>Severity</th><th class="num">Pages</th><th>Fix</th></tr></thead>
+    <tbody>
+${templateRows}
+    </tbody>
+  </table></div>`
+      : ''
+  }
+
+  <h2>Every page</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>Page</th><th class="num">Score</th><th>Grade</th><th class="num">Issues</th><th>Blocked from</th></tr></thead>
+    <tbody>
+${pageRows}
+    </tbody>
+  </table></div>
+
+  ${failedRows}
+
+  <footer>
+    Generated by ${escapeHtml(brand)}. Scoring weights are a judgement call, not an empirically
+    derived model; the underlying measurements are objective and reproducible.
+  </footer>
+
+</div>
+</body>
+</html>
+`;
+}
+
+function siteVerdict(rollup, audited) {
+  const blocked = audited.filter((page) =>
+    (page.crawlers || []).some((crawler) => !crawler.allowed && crawler.purpose !== 'training'),
+  );
+  if (blocked.length === audited.length && audited.length > 0) {
+    return 'Every page audited is blocked from at least one answer engine. This is a site-wide robots.txt problem and the single highest-value fix available.';
+  }
+  if (blocked.length) {
+    return `${blocked.length} of ${audited.length} pages are blocked from at least one answer engine.`;
+  }
+  if (rollup.averageScore >= 85) return 'Strong across the site. Crawlers can reach these pages and have good material to cite.';
+  if (rollup.averageScore >= 70) return 'Reachable and readable, but competitors with cleaner structure will be cited ahead of these pages.';
+  return 'Reachable, but these pages give answer engines little reason to quote them.';
+}
+
 function codeBlock(heading, content, note) {
   if (!content) {
     return `<div class="gen"><h3>${heading}</h3><p class="note">${escapeHtml(note || 'Nothing to generate — this is already in place.')}</p></div>`;

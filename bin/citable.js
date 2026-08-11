@@ -10,7 +10,7 @@
 import process from 'node:process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { auditSite, auditUrl, urlsFromSitemap } from '../src/core/audit.js';
-import { renderHtml, renderMarkdown, renderSiteMarkdown, renderTerminal } from '../src/core/report.js';
+import { renderHtml, renderMarkdown, renderSiteHtml, renderSiteMarkdown, renderTerminal } from '../src/core/report.js';
 import { compareAudits, renderComparison, renderComparisonMarkdown } from '../src/core/compare.js';
 import { tierFor } from '../src/core/license.js';
 
@@ -30,7 +30,8 @@ OPTIONS
   --json              Output raw JSON.
   --markdown          Output a Markdown report.
   --html              Output a self-contained HTML report (client deliverable;
-                      prints and saves to PDF cleanly).
+                      prints and saves to PDF cleanly). Works for a single page
+                      and, with --site, for a whole-site rollup.
   --out <file>        Write the primary output to a file instead of stdout.
   --report <file>     Also write a report to this file, whatever the primary
                       output format is (one audit, two artifacts). The format
@@ -265,9 +266,19 @@ async function main() {
       });
       worstScore = rollup.averageScore;
       findings = rollup.pages.flatMap((page) => page.issues || []);
-      markdown = renderSiteMarkdown(rollup, { brand: options.brand });
-      // Site mode has no single-page HTML report; the rollup is Markdown.
-      output = options.json ? JSON.stringify(rollup, null, 2) : markdown;
+      const siteBranding = {
+        brand: options.brand,
+        accent: options.accent,
+        preparedFor: options.preparedFor,
+        preparedBy: options.preparedBy,
+      };
+      markdown = renderSiteMarkdown(rollup, siteBranding);
+      html = renderSiteHtml(rollup, siteBranding);
+      output = options.json
+        ? JSON.stringify(rollup, null, 2)
+        : options.html
+          ? html
+          : markdown;
     } else {
       const result = await auditUrl(options.url, audit);
       worstScore = result.score;
@@ -325,12 +336,8 @@ async function main() {
   // like it does.
   if (options.report && options.report !== options.out) {
     const wantsHtml = /\.html?$/i.test(options.report);
-    if (wantsHtml && !html) {
-      process.stderr.write('citable: HTML reports are per-page; use --report <file>.md in --site mode\n');
-    } else {
-      await writeFile(options.report, wantsHtml ? html : markdown, 'utf8');
-      process.stderr.write(`citable: wrote ${options.report}\n`);
-    }
+    await writeFile(options.report, wantsHtml ? html : markdown, 'utf8');
+    process.stderr.write(`citable: wrote ${options.report}\n`);
   }
 
   // CI gates.

@@ -9,7 +9,7 @@ export { auditUrl, auditSite, urlsFromSitemap, FREE_ISSUE_LIMIT } from './audit.
 export { runChecks, CATEGORIES, SEVERITY_ORDER } from './checks.js';
 export { scoreFindings, prioritize, gradeFor, headroom } from './score.js';
 export { generateAll, generateRobotsPatch, generateLlmsTxt, generateJsonLd, generateFaqSchema } from './generate.js';
-export { renderMarkdown, renderSiteMarkdown, renderTerminal, renderHtml } from './report.js';
+export { renderMarkdown, renderSiteMarkdown, renderTerminal, renderHtml, renderSiteHtml } from './report.js';
 export { compareAudits, renderComparison, renderComparisonMarkdown } from './compare.js';
 export { AI_CRAWLERS, CITATION_CRAWLERS, parseRobots, isAllowed, crawlerMatrix } from './robots.js';
 export { issueKey, verifyKey, tierFor } from './license.js';

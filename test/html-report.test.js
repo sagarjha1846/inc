@@ -69,9 +69,11 @@ test('escapes page-controlled content instead of executing it', async () => {
   const result = await auditFixture(HOSTILE);
   const html = renderHtml(result);
 
-  // Strip the one <script>-free stylesheet and check no scripts exist at all.
+  // The report contains no scripts of its own, and page content must not be
+  // able to introduce any markup — checked on tag delimiters rather than on
+  // attribute substrings, which appear harmlessly inside escaped text.
   assert.doesNotMatch(html, /<script/i, 'the report should contain no script tags whatsoever');
-  assert.doesNotMatch(html, /onerror=/i);
+  assert.doesNotMatch(html, /<img\b/i, 'no img element may be introduced by page content');
 
   // The audited page's markup must appear escaped, not live.
   assert.match(html, /&lt;/);
@@ -145,4 +147,127 @@ test('a report with no robots.txt explains that nothing is blocked', async () =>
 
   const html = renderHtml(result);
   assert.match(html, /No robots\.txt was found, so nothing is blocked/);
+});
+
+/* ------------------------------------------------- whole-site HTML report */
+
+import { auditSite, urlsFromSitemap } from '../src/core/audit.js';
+import { renderSiteHtml } from '../src/core/report.js';
+
+/** A small site where one shared template carries the same defect everywhere. */
+async function startSite() {
+  let port;
+  const page = (path) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>${path} — Northwind</title>
+<meta name="description" content="A page about ${path} with enough description text to satisfy the length check comfortably.">
+</head><body><h1>${path}</h1>
+<p>${`Body copy for ${path} that runs long enough to count as genuine readable content. `.repeat(20)}</p>
+</body></html>`;
+
+  const server = http.createServer((req, res) => {
+    if (req.url === '/robots.txt') {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      // The template-level defect: every page is blocked from Perplexity.
+      return res.end('User-agent: PerplexityBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n');
+    }
+    if (req.url === '/sitemap.xml') {
+      res.writeHead(200, { 'content-type': 'application/xml' });
+      return res.end(
+        `<urlset><url><loc>http://127.0.0.1:${port}/a</loc></url><url><loc>http://127.0.0.1:${port}/b</loc></url></urlset>`,
+      );
+    }
+    if (req.url === '/llms.txt') {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(page(req.url));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  port = server.address().port;
+  return { origin: `http://127.0.0.1:${port}`, stop: () => server.close() };
+}
+
+test('the site report leads with issues that repeat across pages', async (t) => {
+  const site = await startSite();
+  t.after(() => site.stop());
+
+  const urls = await urlsFromSitemap(site.origin, { limit: 5, fetchOptions: ALLOW_PRIVATE });
+  const rollup = await auditSite(urls, { tier: 'pro', fetchOptions: ALLOW_PRIVATE, delayMs: 0 });
+  const html = renderSiteHtml(rollup, { brand: 'Acme Digital', preparedFor: 'Northwind' });
+
+  assert.match(html, /^<!doctype html>/);
+  assert.match(html, /Acme Digital — Site AI Visibility Audit/);
+  assert.match(html, /Prepared for Northwind/);
+
+  // The template-level section is the point of a site report.
+  assert.match(html, /Fix these first/);
+  assert.match(html, /Invisible to Perplexity|blocked by robots\.txt/);
+
+  // Every audited page appears, with the engine it is blocked from.
+  for (const url of urls) assert.ok(html.includes(url), `missing page row for ${url}`);
+  assert.match(html, /PerplexityBot/);
+
+  // Same self-contained guarantees as the single-page report.
+  assert.doesNotMatch(html, /<script/i);
+  assert.doesNotMatch(html, /<link[^>]+href=["']https?:/i);
+});
+
+test('the site verdict calls out a site-wide block', async (t) => {
+  const site = await startSite();
+  t.after(() => site.stop());
+
+  const urls = await urlsFromSitemap(site.origin, { limit: 5, fetchOptions: ALLOW_PRIVATE });
+  const rollup = await auditSite(urls, { tier: 'pro', fetchOptions: ALLOW_PRIVATE, delayMs: 0 });
+  const html = renderSiteHtml(rollup);
+
+  // Every page is blocked, so the verdict should say so rather than averaging
+  // it away into a mediocre score.
+  assert.match(html, /Every page audited is blocked from at least one answer engine/);
+});
+
+test('unreachable pages are reported rather than silently dropped', () => {
+  const rollup = {
+    pagesAudited: 1,
+    pagesFailed: 1,
+    averageScore: 70,
+    worst: null,
+    best: null,
+    sitewideIssues: [],
+    pages: [
+      { url: 'https://a.test/ok', score: 70, grade: 'C', issuesTotal: 4, crawlers: [] },
+      { url: 'https://a.test/dead', error: 'Timed out after 15000ms', code: 'timeout' },
+    ],
+  };
+  const html = renderSiteHtml(rollup);
+  assert.match(html, /Could not be fetched/);
+  assert.match(html, /https:\/\/a\.test\/dead/);
+  assert.match(html, /Timed out/);
+  assert.match(html, /1 unreachable/);
+});
+
+test('page-controlled URLs and errors are escaped in the site report', () => {
+  const rollup = {
+    pagesAudited: 1,
+    pagesFailed: 1,
+    averageScore: 50,
+    worst: null,
+    best: null,
+    sitewideIssues: [{ id: 'x', title: '<script>alert(1)</script>', severity: 'high', pages: 1, fix: '"><b>y' }],
+    pages: [
+      { url: 'https://a.test/<script>alert(1)</script>', score: 50, grade: 'D', issuesTotal: 1, crawlers: [] },
+      { url: 'https://a.test/bad', error: '<img src=x onerror=alert(2)>', code: 'error' },
+    ],
+  };
+  const html = renderSiteHtml(rollup);
+
+  // The property that matters is that page-controlled text cannot introduce
+  // live markup. Searching for the substring "onerror=" is the wrong proxy —
+  // it appears harmlessly inside "&lt;img src=x onerror=alert(2)&gt;", which
+  // renders as inert text. Assert on tag delimiters instead.
+  assert.doesNotMatch(html, /<script/i, 'no script element may appear');
+  assert.doesNotMatch(html, /<img\b/i, 'no img element may be introduced by page content');
+  assert.doesNotMatch(html, /<b>/i, 'no markup may be injected via a fix string');
+  assert.match(html, /&lt;script&gt;/, 'the payload should survive as escaped text');
+  assert.match(html, /&lt;img src=x onerror=alert\(2\)&gt;/, 'the error text should be fully escaped');
 });

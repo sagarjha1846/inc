@@ -110,6 +110,11 @@ npx citable example.com --site --markdown --out audit.md
 npx citable client.com --html --out audit.html \
   --brand "Acme Digital" --prepared-for "Client Co" --accent "#7c3aed"
 
+# The same for a whole site — leads with the issues that repeat across pages,
+# since those are one fix in a shared template rather than one fix per page
+npx citable client.com --site --limit 30 --html --out site-audit.html \
+  --brand "Acme Digital" --prepared-for "Client Co"
+
 # Your dev server, before you ship
 npx citable http://localhost:3000 --allow-private
 
@@ -186,7 +191,7 @@ Zero dependencies. Runs on Node 20+, Cloudflare Workers, Deno and Bun — nothin
 | Generated `llms.txt` | — | ✅ |
 | Generated JSON-LD and FAQPage schema | — | ✅ |
 | Whole-site crawl and Markdown reports | — | ✅ |
-| White-labelled HTML client reports | — | ✅ |
+| White-labelled HTML client reports (page and whole-site) | — | ✅ |
 | CI gating and score/crawler regression alerts | ✅ | ✅ |
 | Finding-level regression diff | — | ✅ |
 
@@ -215,7 +220,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, and
 ## Development
 
 ```bash
-node --test "test/*.test.js"   # 111 tests, no install step
+node --test "test/*.test.js"   # 115 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```

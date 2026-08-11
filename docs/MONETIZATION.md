@@ -57,9 +57,19 @@ accent colour and a prepared-for line, self-contained in one file, and it prints
 saves to PDF cleanly:
 
 ```bash
+# One page
 citable client.com --html --out audit.html \
   --brand "Your Agency" --prepared-for "Client Co" --accent "#7c3aed"
+
+# Or the whole site, which is what an engagement actually covers
+citable client.com --site --limit 30 --html --out site-audit.html \
+  --brand "Your Agency" --prepared-for "Client Co"
 ```
+
+The site report leads with the issues that repeat across pages. That ordering
+is most of the value you are selling: an issue on twenty pages is one change to
+a shared template, not twenty pieces of work, and knowing which is which is
+what the client cannot do themselves.
 
 Agencies charge four figures for this work manually; the tool does the analysis in
 seconds, and what you sell is the interpretation, prioritisation and the fixes
