@@ -7,8 +7,11 @@ content that only exists after JavaScript runs, or give a model nothing structur
 attribute. Citable checks all three in about ten seconds and tells you exactly what to
 change.
 
+**[Live demo and sample reports →](https://sagarjha1846.github.io/inc/)**
+
 ```bash
-npx citable yoursite.com
+# No npm publish needed — install straight from this repository
+npx github:sagarjha1846/inc yoursite.com
 ```
 
 ```
@@ -202,6 +205,18 @@ was found on your page, so the fix is a paste rather than a project.
 export CITABLE_KEY="CTB1..."
 npx citable yoursite.com --site --markdown --out audit.md
 ```
+
+## Where it runs
+
+| Surface | URL | What works |
+| --- | --- | --- |
+| Static site | [sagarjha1846.github.io/inc](https://sagarjha1846.github.io/inc/) | Landing page, interactive demo report, both sample deliverables |
+| CLI | `npx github:sagarjha1846/inc yoursite.com` | Everything, no rate limit |
+| Hosted app | your own Cloudflare Worker | Everything, including the live web UI |
+
+The static site cannot run live audits: auditing a URL needs a server-side fetch, which
+a static host cannot do and a browser is blocked from doing by CORS. It is the shop
+window; the CLI and the Worker are the shop.
 
 ## Self-hosting
 
