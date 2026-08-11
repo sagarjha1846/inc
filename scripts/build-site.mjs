@@ -51,7 +51,18 @@ function staticiseLanding(html) {
   const start = html.indexOf('  <form id="f">');
   const end = html.indexOf('</header>');
   if (start === -1 || end === -1) throw new Error('landing page structure changed; update staticiseLanding()');
-  return html.slice(0, start) + replacement + '\n' + html.slice(end);
+  let out = html.slice(0, start) + replacement + '\n' + html.slice(end);
+
+  // The footer documents the JSON API, which does not exist on a static host
+  // either. Leaving it advertises an endpoint that answers 404 here.
+  const apiLine = /  <p>API: <code>[^<]*<\/code>[\s\S]*?<\/p>\n/;
+  if (!apiLine.test(out)) throw new Error('footer API line not found; update staticiseLanding()');
+  out = out.replace(
+    apiLine,
+    `  <p>CLI: <code>npx github:sagarjha1846/inc example.com</code> · ` +
+      `the JSON API ships with the <a href="${REPO}#self-hosting">self-hosted Worker</a>.</p>\n`,
+  );
+  return out;
 }
 
 await mkdir(outDir, { recursive: true });
