@@ -35,10 +35,33 @@ const NAMED_ENTITIES = {
   szlig: 'ß',
 };
 
+/**
+ * Remove control characters from text taken off a page.
+ *
+ * Everything the audit quotes is eventually printed to a terminal or written
+ * into a report, and control characters are instructions there rather than
+ * content. `ESC[2J` clears the screen: a page carrying it can blank the
+ * auditor's terminal mid-report and print a clean bill of health of its own
+ * choosing. This tool exists to inspect sites nobody controls, so the page has
+ * to be treated as hostile input.
+ *
+ * Newline and tab are kept — block structure depends on them. Everything else
+ * in C0, plus DEL and the C1 range, goes.
+ */
+function stripControls(text) {
+  // Written as escapes rather than literal bytes so the source stays readable
+  // and copy-safe: C0 except tab and newline, DEL, and the C1 range.
+  return text.replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
+}
+
 /** Decode the HTML entities that realistically show up in page text. */
 export function decodeEntities(input) {
-  if (!input || input.indexOf('&') === -1) return input || '';
-  return input.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});/g, (match, body) => {
+  // Stripping happens on both paths: control characters can arrive as literal
+  // bytes as well as through an entity, and the shortcut below is taken by
+  // every string that contains no `&` at all.
+  if (!input) return '';
+  if (input.indexOf('&') === -1) return stripControls(input);
+  const decoded = input.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});/g, (match, body) => {
     if (body[0] === '#') {
       const code =
         body[1] === 'x' || body[1] === 'X'
@@ -56,6 +79,9 @@ export function decodeEntities(input) {
     const named = NAMED_ENTITIES[body] ?? NAMED_ENTITIES[body.toLowerCase()];
     return named === undefined ? match : named;
   });
+  // After decoding, not before: `&#27;` *becomes* a control character here, so
+  // stripping first would leave exactly the payload this is meant to remove.
+  return stripControls(decoded);
 }
 
 const ATTR_RE = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
@@ -178,7 +204,9 @@ export function jsonLdBlocks(html) {
     const attrs = parseAttributes(match[1] || '');
     const type = (attrs.type || '').toLowerCase();
     if (!type.includes('ld+json')) continue;
-    const raw = match[2].trim();
+    // Quoted back to the reader as evidence, and never decoded on the way, so
+    // control characters have to come out here instead.
+    const raw = stripControls(match[2].trim());
     if (!raw) continue;
     try {
       blocks.push({ ok: true, data: JSON.parse(raw), raw });

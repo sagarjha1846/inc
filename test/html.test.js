@@ -146,3 +146,54 @@ test('title, linkRel, htmlLang and countTag read document-level signals', () => 
   assert.equal(htmlLang(html), 'en');
   assert.equal(countTag(html, 'ul'), 2);
 });
+
+/* ------------------------------------------------ control characters */
+
+const ESC = String.fromCharCode(27);
+
+test('control characters are removed from decoded text', () => {
+  // Everything quoted from a page ends up in a terminal or a report, where
+  // control characters are instructions rather than content.
+  assert.equal(decodeEntities(`a&#27;[2Jb`), 'a[2Jb');
+  assert.equal(decodeEntities(`a${ESC}[2Jb`), 'a[2Jb');
+  assert.equal(decodeEntities('a\u0000\u0007\u007Fb'), 'ab');
+
+  // Tab and newline are content: block structure depends on them.
+  assert.equal(decodeEntities('a\tb\nc'), 'a\tb\nc');
+});
+
+test('an entity-encoded escape does not survive decoding', () => {
+  // The order matters: `&#27;` only becomes a control character *during* the
+  // decode, so stripping beforehand would leave the payload intact.
+  const text = visibleText(`<p>Intro&#27;[2J&#27;[1;1HFAKE CLEAN REPORT</p>`);
+  assert.ok(!text.includes(ESC), 'no escape byte may survive');
+  assert.match(text, /Intro\[2J\[1;1HFAKE CLEAN REPORT/, 'the visible characters are kept');
+});
+
+test('page text reaches findings without control characters', async () => {
+  const { runChecks } = await import('../src/core/checks.js');
+  const html = `<!doctype html><html lang="en"><head><title>A page about widgets and things</title></head>
+<body><main><h1>W</h1><p>Intro&#27;[2J&#27;[1;1H SCORE 100/100 ${'padding to push this opening past four hundred characters. '.repeat(10)}</p></main></body></html>`;
+
+  const { findings } = runChecks({
+    url: 'https://acme.com/w',
+    page: {
+      body: html, status: 200, ok: true, headers: { 'content-type': 'text/html; charset=utf-8' },
+      elapsedMs: 5, bytes: html.length, redirects: [], truncated: false, finalUrl: 'https://acme.com/w',
+    },
+  });
+
+  const dirty = findings.filter((f) =>
+    [f.title, f.detail, f.evidence].some((v) => typeof v === 'string' && /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/.test(v)),
+  );
+  assert.deepEqual(dirty.map((f) => f.id), [], 'no finding may carry a control character');
+});
+
+test('raw JSON-LD quoted as evidence is cleaned too', () => {
+  // This path never passes through the entity decoder, so it needs its own
+  // treatment rather than inheriting one.
+  const blocks = jsonLdBlocks(`<script type="application/ld+json">{ broken ${ESC}[2J json</script>`);
+  assert.equal(blocks[0].ok, false);
+  assert.ok(!blocks[0].raw.includes(ESC));
+  assert.match(blocks[0].raw, /broken \[2J json/);
+});
