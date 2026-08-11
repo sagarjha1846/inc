@@ -292,3 +292,58 @@ test('script share is reported as evidence but does not decide the verdict', () 
     assert.match(find(findings, 'js-rendered').evidence, /% (of the document is <script>|script)/);
   }
 });
+
+/* ------------------------------------------------- outbound citations */
+
+const CITE_BODY = `<h1>T</h1><p>${'Long enough body copy to be treated as real content on this page. '.repeat(30)}</p>`;
+
+/** Run the citation check for a page at `url` carrying `links`. */
+function citations(links, url = 'https://acme.com/post') {
+  const html = `<!doctype html><html lang="en"><head><title>A page about things</title></head><body>${CITE_BODY}${links}</body></html>`;
+  const { findings } = runChecks({
+    url,
+    page: {
+      body: html, status: 200, ok: true, headers: { 'content-type': 'text/html; charset=utf-8' },
+      elapsedMs: 5, bytes: html.length, redirects: [], truncated: false, finalUrl: url,
+    },
+  });
+  return find(findings, 'citations');
+}
+
+test('genuine external sources count as citations', () => {
+  const finding = citations('<a href="https://rfc-editor.org/x">RFC</a><a href="https://schema.org/y">schema</a>');
+  assert.equal(finding.severity, 'pass');
+});
+
+test('a site linking to itself is not citing a source', () => {
+  // Each of these is the same site under a different hostname, so counting
+  // them lets a page that cites nothing pass an authority check on its own
+  // navigation.
+  for (const [label, links] of [
+    ['own subdomains', '<a href="https://blog.acme.com/a">Blog</a><a href="https://docs.acme.com/b">Docs</a>'],
+    ['www vs apex', '<a href="https://www.acme.com/a">A</a><a href="https://www.acme.com/b">B</a>'],
+  ]) {
+    assert.notEqual(citations(links).severity, 'pass', `${label} should not count`);
+  }
+});
+
+test('social profile links are self-promotion, not corroboration', () => {
+  const finding = citations('<a href="https://twitter.com/acme">X</a><a href="https://linkedin.com/company/acme">In</a>');
+  assert.notEqual(finding.severity, 'pass');
+});
+
+test('registrable domains are compared under multi-part public suffixes', () => {
+  // Under co.uk the last two labels are the suffix itself, so a naive
+  // last-two-labels comparison makes every .co.uk site look like one site.
+  const sameSite = citations(
+    '<a href="https://blog.acme.co.uk/a">Blog</a><a href="https://shop.acme.co.uk/b">Shop</a>',
+    'https://acme.co.uk/post',
+  );
+  assert.notEqual(sameSite.severity, 'pass', 'sibling subdomains of one .co.uk site');
+
+  const different = citations(
+    '<a href="https://bbc.co.uk/news">BBC</a><a href="https://gov.uk/guidance">GOV</a>',
+    'https://acme.co.uk/post',
+  );
+  assert.equal(different.severity, 'pass', 'genuinely different .uk organisations');
+});
