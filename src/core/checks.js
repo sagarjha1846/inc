@@ -10,6 +10,7 @@
 
 import {
   countTag,
+  findTags,
   flattenJsonLd,
   headings as extractHeadings,
   htmlLang,
@@ -199,10 +200,8 @@ function checkAccess(ctx) {
   }
 
   // 3. Snippet-suppressing directives, in meta and in headers.
-  const robotsMeta = [
-    ...(metaTags(ctx.html).get('robots') || []),
-    ...(metaTags(ctx.html).get('googlebot') || []),
-  ]
+  const allMeta = metaTags(ctx.html);
+  const robotsMeta = [...(allMeta.get('robots') || []), ...(allMeta.get('googlebot') || [])]
     .join(',')
     .toLowerCase();
   const xRobots = String(page.headers['x-robots-tag'] || '').toLowerCase();
@@ -308,9 +307,13 @@ function checkAccess(ctx) {
   out.push(
     finding({
       id: 'sitemap',
+      // Present but undeclared is a real gap, not a clean pass. Reporting it as
+      // a pass while still withholding points would leave the user with every
+      // check green and a score under 100, and nothing explaining the
+      // difference.
+      severity: sitemapFound ? (sitemapDeclared ? 'pass' : 'low') : 'medium',
       category: 'access',
-      severity: sitemapFound ? 'pass' : 'medium',
-      title: sitemapFound ? `Sitemap available${sitemapDeclared ? ' and declared in robots.txt' : ''}` : 'No sitemap found',
+      title: sitemapFound ? `Sitemap available${sitemapDeclared ? ' and declared in robots.txt' : ' but not declared in robots.txt'}` : 'No sitemap found',
       detail: sitemapFound
         ? `Crawlers can enumerate your pages from ${ctx.sitemap.url}.${sitemapDeclared ? '' : ' It is not declared in robots.txt, so discovery depends on the conventional path.'}`
         : 'Without a sitemap, crawlers discover pages only by following links, which leaves deep or newly published pages unindexed for longer.',
@@ -598,6 +601,9 @@ function checkSchema(ctx) {
   const nodes = flattenJsonLd(blocks);
   const types = jsonLdTypes(nodes);
   ctx.schemaTypes = types;
+  // Kept for the authority checks, which must read declared facts rather than
+  // regex the raw document.
+  ctx.schemaNodes = nodes;
 
   const broken = blocks.filter((block) => !block.ok);
 
@@ -798,8 +804,15 @@ function checkAuthority(ctx) {
   const { html, url } = ctx;
   const types = ctx.schemaTypes || new Set();
 
+  // Read authorship from the parsed structured data rather than regexing the
+  // raw HTML. A bundler that inlines package metadata puts `"author":` inside
+  // a <script>, which no engine reads as authorship but which a document-wide
+  // regex happily accepts — reporting "authorship is declared" for a page that
+  // declares none.
+  const nodes = ctx.schemaNodes || [];
   const authorMeta = meta(html, 'author');
-  const hasAuthor = Boolean(authorMeta) || types.has('person') || /"author"\s*:/.test(html);
+  const hasAuthorNode = nodes.some((node) => node.author || node.creator);
+  const hasAuthor = Boolean(authorMeta) || types.has('person') || hasAuthorNode || linkRel(html, 'author').length > 0;
   out.push(
     finding({
       id: 'author',
@@ -815,10 +828,14 @@ function checkAuthority(ctx) {
     }),
   );
 
-  const modified = meta(html, 'article:modified_time') || meta(html, 'og:updated_time') || meta(html, 'last-modified');
-  const schemaDate = /"date(Modified|Published)"\s*:/.test(html);
+  const modified =
+    meta(html, 'article:modified_time') || meta(html, 'og:updated_time') || meta(html, 'last-modified');
+  // Declared in structured data, not merely mentioned somewhere in a script.
+  const schemaDate = nodes.some((node) => node.datePublished || node.dateModified || node.dateCreated);
+  // A visible <time datetime="..."> is a real, reader-facing date signal.
+  const timeElement = findTags(html, 'time').some((tag) => tag.attrs.datetime);
   const headerDate = ctx.page.headers['last-modified'];
-  const hasFreshness = Boolean(modified || schemaDate || headerDate);
+  const hasFreshness = Boolean(modified || schemaDate || timeElement || headerDate);
   out.push(
     finding({
       id: 'freshness',
@@ -826,7 +843,7 @@ function checkAuthority(ctx) {
       severity: hasFreshness ? 'pass' : 'low',
       title: hasFreshness ? 'Freshness signal present' : 'No published or modified date',
       detail: hasFreshness
-        ? `Dated via ${modified ? 'meta tags' : schemaDate ? 'structured data' : 'Last-Modified header'}.`
+        ? `Dated via ${modified ? 'meta tags' : schemaDate ? 'structured data' : timeElement ? 'a visible <time> element' : 'the Last-Modified header'}.`
         : 'Engines strongly prefer sources they can date, especially for anything that changes over time. An undated page loses to a dated competitor on identical content.',
       fix: hasFreshness ? null : 'Publish `datePublished` and `dateModified` in structured data and show the date on the page.',
       earned: hasFreshness ? 2 : 0,
