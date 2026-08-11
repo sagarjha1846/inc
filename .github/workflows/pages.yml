@@ -57,15 +57,17 @@ jobs:
       - name: Publish to the gh-pages branch
         run: |
           set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           # Build the commit from the site directory alone, with no history, so
           # the published branch never accumulates weight or leaks source.
           cd site
           git init -q
           git checkout -q -b gh-pages
           git add -A
-          git commit -q -m "Publish site from ${GITHUB_SHA::7}"
+          # The identity is passed inline: this is a brand-new repository and
+          # inherits nothing from the checked-out one, so a `git config` in the
+          # parent directory leaves the commit with no author and git exits 128.
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Publish site from ${GITHUB_SHA::7}"
           git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
           echo "published to gh-pages"
