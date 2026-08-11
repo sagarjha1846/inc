@@ -127,3 +127,96 @@ test('every generator runs on a page with almost nothing in it', () => {
   assert.equal(generated.faqSchema.markup, null);
   assert.match(generated.faqSchema.note, /question-style headings/);
 });
+
+/* ------------------------------- page content inside the Markdown report */
+
+import { scoreFindings, prioritize } from '../src/core/score.js';
+import { renderMarkdown } from '../src/core/report.js';
+
+/**
+ * Walk a Markdown document the way CommonMark does: a fenced block opens on a
+ * run of backticks and closes only on a run at least as long. Returns the text
+ * outside any fence — anything from the audited page that appears here has
+ * escaped its quoting and become live Markdown.
+ */
+function outsideFences(md) {
+  const out = [];
+  let open = 0;
+  for (const line of md.split('\n')) {
+    const match = /^(`{3,})(.*)$/.exec(line);
+    if (!open && match) {
+      open = match[1].length;
+      continue;
+    }
+    if (open && match && match[1].length >= open && !match[2].trim()) {
+      open = 0;
+      continue;
+    }
+    if (!open) out.push(line);
+  }
+  return { text: out.join('\n'), unterminated: open > 0 };
+}
+
+/** Render a full Markdown report for a page body. */
+function report(html, url = 'https://acme.com/w') {
+  const { findings, ctx } = runChecks({
+    url,
+    page: {
+      body: html, status: 200, ok: true, headers: { 'content-type': 'text/html; charset=utf-8' },
+      elapsedMs: 5, bytes: html.length, redirects: [], truncated: false, finalUrl: url,
+    },
+  });
+  const scored = scoreFindings(findings);
+  const ranked = prioritize(findings);
+  return renderMarkdown({
+    tier: 'pro', url, fetchedAt: '2026-01-01T00:00:00.000Z',
+    http: { status: 200, responseMs: 10, bytes: html.length, redirects: [] },
+    score: scored.score, grade: scored.grade, verdict: scored.verdict,
+    categories: scored.categories, counts: scored.counts,
+    stats: { words: ctx.words, headings: 1, scriptShare: 0, schemaTypes: [] },
+    crawlers: [], issues: ranked, issuesTotal: ranked.length, issuesWithheld: 0, passes: [],
+    generated: generateAll(ctx),
+  });
+}
+
+test('page content cannot break out of the report’s code fences', () => {
+  // Evidence quotes the page verbatim. A three-backtick fence is closed by the
+  // first three backticks inside it, so a page carrying one turns the rest of
+  // its own content into live Markdown in a document headed for a client.
+  const fence = '`'.repeat(3);
+  const html = `<!doctype html><html lang="en"><head><title>Widgets</title>
+<script type="application/ld+json">
+{ broken json
+${fence}
+
+## Injected heading
+
+[a link](https://evil.test) and <img src=x onerror=alert(1)>
+</script></head><body><main><h1>W</h1><p>${PROSE}</p></main></body></html>`;
+
+  const { text, unterminated } = outsideFences(report(html));
+  assert.equal(unterminated, false, 'a fence left open corrupts the rest of the document');
+  assert.doesNotMatch(text, /^## Injected heading/m);
+  assert.doesNotMatch(text, /<img src=x onerror/);
+  assert.doesNotMatch(text, /\[a link\]/);
+});
+
+test('the evidence is still quoted faithfully, not stripped', () => {
+  // Escaping by removing backticks would corrupt the quote, which has to stay
+  // verifiable by hand against the page.
+  const fence = '`'.repeat(3);
+  const html = `<!doctype html><html lang="en"><head><title>Widgets</title>
+<script type="application/ld+json">{ broken ${fence} json</script>
+</head><body><main><h1>W</h1><p>${PROSE}</p></main></body></html>`;
+
+  const md = report(html);
+  assert.match(md, /broken ```? json|broken ``` json/, 'the backticks that were on the page are still shown');
+});
+
+test('an ordinary report uses ordinary fences', () => {
+  // The longer fence is a response to the content, not a permanent change to
+  // how every report looks.
+  const md = report(ORDINARY);
+  assert.match(md, /^```$/m);
+  assert.doesNotMatch(md, /^`{4,}/m);
+});

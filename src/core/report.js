@@ -15,6 +15,28 @@ const SEVERITY_LABEL = {
   pass: 'PASS',
 };
 
+/**
+ * Fence a block of text that came from the audited page.
+ *
+ * Evidence quotes the page verbatim, and generated files carry its title and
+ * description. A three-backtick fence is closed by the first three backticks
+ * inside it, so a page containing one breaks out: everything after it stops
+ * being quoted and becomes live Markdown — headings, links, and raw HTML,
+ * which most renderers pass straight through into a document someone is about
+ * to send a client.
+ *
+ * CommonMark closes a fenced block only with a fence at least as long as the
+ * one that opened it, so the opening fence is made longer than any run of
+ * backticks in the content. Nothing is altered or stripped: the evidence has
+ * to remain a faithful quote of what was found.
+ */
+function fenced(text, info = '') {
+  const body = String(text ?? '');
+  const longest = (body.match(/`+/g) || []).reduce((max, run) => Math.max(max, run.length), 0);
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return [`${fence}${info}`, body, fence];
+}
+
 const BAR_WIDTH = 24;
 
 function bar(ratio) {
@@ -68,9 +90,7 @@ export function renderMarkdown(result, options = {}) {
     lines.push(issue.detail);
     lines.push('');
     if (issue.evidence) {
-      lines.push('```');
-      lines.push(String(issue.evidence).slice(0, 1200));
-      lines.push('```');
+      lines.push(...fenced(String(issue.evidence).slice(0, 1200)));
       lines.push('');
     }
     if (issue.impact) {
@@ -103,16 +123,12 @@ export function renderMarkdown(result, options = {}) {
 
     lines.push('### robots.txt — append this');
     lines.push('');
-    lines.push('```');
-    lines.push(result.generated.robotsTxt.trim());
-    lines.push('```');
+    lines.push(...fenced(result.generated.robotsTxt.trim()));
     lines.push('');
 
     lines.push('### /llms.txt — create this file');
     lines.push('');
-    lines.push('```markdown');
-    lines.push(result.generated.llmsTxt.trim());
-    lines.push('```');
+    lines.push(...fenced(result.generated.llmsTxt.trim(), 'markdown'));
     lines.push('');
 
     lines.push('### JSON-LD — paste inside `<head>`');
@@ -120,9 +136,7 @@ export function renderMarkdown(result, options = {}) {
     lines.push(result.generated.jsonLd.note);
     lines.push('');
     if (result.generated.jsonLd.markup) {
-      lines.push('```html');
-      lines.push(result.generated.jsonLd.markup);
-      lines.push('```');
+      lines.push(...fenced(result.generated.jsonLd.markup, 'html'));
       lines.push('');
     }
 
@@ -131,9 +145,7 @@ export function renderMarkdown(result, options = {}) {
     lines.push(result.generated.faqSchema.note);
     lines.push('');
     if (result.generated.faqSchema.markup) {
-      lines.push('```html');
-      lines.push(result.generated.faqSchema.markup);
-      lines.push('```');
+      lines.push(...fenced(result.generated.faqSchema.markup, 'html'));
       lines.push('');
     }
   }
