@@ -17,8 +17,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       # No dependencies to install — that is the point.
+      # No path argument: `node --test` uses its own file discovery, which
+      # works on every supported Node. A quoted glob is only expanded by the
+      # runner from Node 22, so it fails outright on Node 20 — which is the
+      # floor this package advertises in "engines".
       - name: Run tests
-        run: node --test "test/*.test.js"
+        run: node --test
       - name: Check the CLI starts and prints help
         run: node bin/citable.js --help
 

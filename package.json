@@ -20,7 +20,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test \"test/*.test.js\"",
+    "test": "node --test",
     "audit": "node bin/citable.js",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
