@@ -167,14 +167,29 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, and
 ## Development
 
 ```bash
-node --test "test/*.test.js"   # 57 tests, no install step
+node --test "test/*.test.js"   # 59 tests, no install step
 node bin/citable.js --help
-npx wrangler dev               # hosted UI at localhost:8787
+npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```
 
 The test suite covers robots.txt semantics, scoring, tier enforcement, license
-signing, the worker routes, and a real-HTTP integration suite that exercises
-redirects, size caps and timeouts against a live loopback server.
+signing, the worker routes, the study generator's published statistics, and a
+real-HTTP integration suite that exercises redirects, size caps and timeouts against a
+live loopback server.
+
+The Worker has also been verified running under `workerd` — every route, the SSRF
+guard, and license verification resolving `pro` for a valid key and falling back to
+free for a tampered one.
+
+### Generating a study
+
+The audit runs over a list of sites and writes up the aggregate, which is the most
+effective way to get the tool in front of people who need it:
+
+```bash
+node scripts/benchmark.mjs --list scripts/domains.example.txt --out study
+# writes study.md (the writeup) and study.json (the data behind every claim)
+```
 
 ## License
 

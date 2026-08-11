@@ -41,6 +41,7 @@
     "perplexity",
     "audit"
   ],
-  "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {
+    "wrangler": "^4.120.1"
+  }
 }

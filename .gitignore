@@ -7,6 +7,10 @@ licenses.ndjson
 .env.*
 license.private.json
 
+# wrangler dev reads this for local secrets — it holds LICENSE_SECRET.
+.dev.vars
+.dev.vars.*
+
 node_modules/
 .wrangler/
 dist/

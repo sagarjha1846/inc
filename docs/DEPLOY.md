@@ -40,6 +40,23 @@ curl https://citable.<you>.workers.dev/api/health
 curl "https://citable.<you>.workers.dev/api/audit?url=example.com" | head -40
 ```
 
+### Running it locally first
+
+`wrangler dev` runs the Worker in `workerd`, the same runtime Cloudflare uses in
+production, so it catches anything that works in Node but not on the edge:
+
+```bash
+printf 'LICENSE_SECRET=your-local-test-secret-32-chars\n' > .dev.vars   # gitignored
+npx wrangler dev
+```
+
+Then check the routes: `/` (landing), `/demo` (a full sample report, no network call),
+`/api/health`, `/robots.txt`, `/llms.txt`, and `/api/audit?url=example.com`.
+
+This has been verified end to end in `workerd`: all routes serve, the SSRF guard
+refuses private hosts, a valid key resolves to `tier: "pro"`, and a tampered key falls
+back to free with a `bad_signature` warning rather than failing open.
+
 ### Optional: global rate limiting
 
 The Worker rate-limits per isolate by default, which stops runaway scripts but is not a
