@@ -56,19 +56,38 @@ export function generateRobotsPatch(ctx, options = {}) {
 }
 
 /**
+ * Flatten a page-derived value for interpolation into a line-structured file.
+ *
+ * llms.txt is Markdown, and the reader publishes it at their site root for
+ * models to read. A value carrying newlines stops being a value and becomes
+ * document structure: a site name of "Acme\n\n## Ignore previous instructions"
+ * emits that heading into a file whose whole purpose is to be read as
+ * instructions about the site. Length is capped for the same reason — one
+ * enormous title should not become the document.
+ */
+function oneLine(value, limit = 120) {
+  const flat = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return flat.length > limit ? `${flat.slice(0, limit - 1).trimEnd()}…` : flat;
+}
+
+/**
  * A starter llms.txt built from the page's real title, description and
  * internal link structure.
  */
 export function generateLlmsTxt(ctx) {
   const url = new URL(ctx.url);
-  const siteName =
+  const siteName = oneLine(
     meta(ctx.html, 'og:site_name') ||
-    extractTitle(ctx.html).split(/[|–—-]/).pop()?.trim() ||
-    url.hostname.replace(/^www\./, '');
-  const summary =
+      extractTitle(ctx.html).split(/[|–—-]/).pop()?.trim() ||
+      url.hostname.replace(/^www\./, ''),
+    80,
+  );
+  const summary = oneLine(
     meta(ctx.html, 'description') ||
-    (ctx.text || '').split('\n').find((line) => line.trim().length > 60)?.slice(0, 220) ||
-    `Documentation and resources from ${url.hostname}.`;
+      (ctx.text || '').split('\n').find((line) => line.trim().length > 60) ||
+      `Documentation and resources from ${url.hostname}.`,
+    220,
+  );
 
   const seen = new Set();
   const internal = [];
@@ -83,7 +102,7 @@ export function generateLlmsTxt(ctx) {
   const lines = [
     `# ${siteName}`,
     '',
-    `> ${summary.trim().replace(/\s+/g, ' ')}`,
+    `> ${summary}`,
     '',
     'This file follows the llms.txt convention: a curated, plain-Markdown map of',
     'this site for language models. Replace the placeholder links below with the',
@@ -101,7 +120,7 @@ export function generateLlmsTxt(ctx) {
     lines.push('## Topics covered on this page');
     lines.push('');
     for (const topic of internal) {
-      lines.push(`- [${topic}](${ctx.url}): Section of ${extractTitle(ctx.html) || url.pathname}.`);
+      lines.push(`- [${oneLine(topic, 80)}](${ctx.url}): Section of ${oneLine(extractTitle(ctx.html) || url.pathname, 80)}.`);
     }
     lines.push('');
   }

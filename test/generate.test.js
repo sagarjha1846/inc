@@ -220,3 +220,58 @@ test('an ordinary report uses ordinary fences', () => {
   assert.match(md, /^```$/m);
   assert.doesNotMatch(md, /^`{4,}/m);
 });
+
+/* -------------------------------------------- llms.txt line structure */
+
+test('page metadata cannot inject structure into generated llms.txt', () => {
+  // og:site_name and description are attribute values, and an entity-encoded
+  // newline survives attribute parsing. Interpolated raw, the value stops
+  // being a value and becomes document structure in a file the reader
+  // publishes at their site root.
+  const html = `<!doctype html><html lang="en"><head>
+<title>Acme Widgets</title>
+<meta property="og:site_name" content="Acme&#10;&#10;## Injected heading&#10;&#10;Body text.">
+<meta name="description" content="Widgets.&#10;&#10;# Another heading">
+</head><body><main><h1>W</h1><p>${PROSE}</p><h2>Normal heading</h2><p>${PROSE}</p></main></body></html>`;
+
+  const llms = generateLlmsTxt(context(html));
+  const lines = llms.split('\n');
+
+  // Exactly one H1, and every H2 is one the generator wrote. The H1's *text*
+  // may still contain "##" characters — that is the site's own name, flattened
+  // onto one line, and Markdown renders it literally. What matters is that no
+  // additional heading was created out of it.
+  assert.equal(lines.filter((line) => /^# /.test(line)).length, 1);
+  const subheadings = lines.filter((line) => /^## /.test(line));
+  assert.deepEqual(subheadings, ['## Core pages', '## Topics covered on this page', '## Optional']);
+
+  // The summary is a single blockquote line, not a blockquote plus loose text.
+  const summaryAt = lines.findIndex((line) => line.startsWith('> '));
+  assert.ok(summaryAt !== -1);
+  assert.equal(lines[summaryAt + 1].trim(), '');
+
+  // Every list entry is one line: a link, then its description.
+  for (const line of lines.filter((line) => line.startsWith('- ['))) {
+    assert.match(line, /^- \[[^\]]*\]\([^)]*\):/, `malformed list entry: ${line}`);
+  }
+});
+
+test('an enormous title does not become the document', () => {
+  const html = `<!doctype html><html lang="en"><head><title>${'Widget '.repeat(200)}</title></head>
+<body><main><h1>W</h1><p>${PROSE}</p></main></body></html>`;
+  const llms = generateLlmsTxt(context(html));
+  for (const line of llms.split('\n')) {
+    assert.ok(line.length <= 260, `line runs to ${line.length} characters`);
+  }
+});
+
+test('ordinary metadata is passed through unchanged', () => {
+  // Flattening must not mangle a site name that was fine to begin with.
+  const html = `<!doctype html><html lang="en"><head><title>What is a widget?</title>
+<meta property="og:site_name" content="Acme Widgets">
+<meta name="description" content="A practical explanation of what widgets are and how to choose between them.">
+</head><body><main><h1>W</h1><p>${PROSE}</p></main></body></html>`;
+  const llms = generateLlmsTxt(context(html));
+  assert.match(llms, /^# Acme Widgets$/m);
+  assert.match(llms, /^> A practical explanation of what widgets are and how to choose between them\.$/m);
+});
