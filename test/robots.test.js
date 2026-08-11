@@ -59,6 +59,50 @@ Disallow: /a/*/secret
   assert.equal(isAllowed(parsed, 'AnyBot', '/a/b/public').allowed, true);
 });
 
+test('wildcard patterns backtrack to find a match anywhere', () => {
+  // A left-to-right scan that commits to the first occurrence of each literal
+  // gets these wrong, and gets them wrong in the dangerous direction: it
+  // reports "allowed" for a page the site actually blocks.
+  const cases = [
+    // [pattern, path, blocked]
+    ['/*.pdf$', '/files/report.pdf', true],
+    ['/*.pdf$', '/files/report.pdf.html', false],
+    ['/a*$', '/abc', true],
+    ['/a*$', '/a', true],
+    ['/a*$', '/b', false],
+    ['/*b$', '/abcb', true],
+    ['/*b$', '/abc', false],
+    ['/a*b*c$', '/axxbyyc', true],
+    ['/a*b*c$', '/axxbyyd', false],
+    ['/blog$', '/blog', true],
+    ['/blog$', '/blog/post', false],
+    ['/*', '/anything', true],
+    ['/', '/anything', true],
+  ];
+
+  for (const [pattern, path, blocked] of cases) {
+    const parsed = parseRobots(`User-agent: *\nDisallow: ${pattern}\n`);
+    assert.equal(
+      isAllowed(parsed, 'GPTBot', path).allowed,
+      !blocked,
+      `${pattern} vs ${path} should be ${blocked ? 'blocked' : 'allowed'}`,
+    );
+  }
+});
+
+test('a hostile robots.txt pattern cannot stall the matcher', () => {
+  // robots.txt is fetched from arbitrary sites, so a pattern designed to
+  // trigger catastrophic backtracking is an availability concern for the
+  // hosted worker, not a hypothetical.
+  const evil = `/${'*a'.repeat(30)}$`;
+  const path = `/${'a'.repeat(5000)}`;
+  const parsed = parseRobots(`User-agent: *\nDisallow: ${evil}\n`);
+
+  const startedAt = Date.now();
+  isAllowed(parsed, 'GPTBot', path);
+  assert.ok(Date.now() - startedAt < 1000, 'matching should stay linear-ish, not blow up');
+});
+
 test('empty Disallow means allow everything', () => {
   const parsed = parseRobots('User-agent: *\nDisallow:');
   assert.equal(isAllowed(parsed, 'AnyBot', '/anything').allowed, true);
@@ -74,6 +118,34 @@ test('crawlerMatrix reports every known AI crawler with its verdict', () => {
   assert.equal(matrix.length, AI_CRAWLERS.length);
   assert.ok(matrix.every((crawler) => crawler.allowed === false));
   assert.ok(matrix.every((crawler) => crawler.explicit === false));
+});
+
+test('user-agent groups match by prefix, not substring', () => {
+  // Substring matching hands a `User-agent: bot` group every crawler whose
+  // name merely contains "bot", which reports a site as blocking eight answer
+  // engines when it blocks none — a false alarm the user would act on.
+  const blockedBy = (agentLine) =>
+    crawlerMatrix(`User-agent: ${agentLine}\nDisallow: /\n\nUser-agent: *\nAllow: /\n`, '/')
+      .filter((crawler) => !crawler.allowed)
+      .map((crawler) => crawler.token);
+
+  assert.deepEqual(blockedBy('bot'), [], 'no product token starts with "bot"');
+  assert.deepEqual(blockedBy('Search'), [], 'no product token starts with "search"');
+  assert.deepEqual(blockedBy('GPTBot'), ['GPTBot']);
+  assert.deepEqual(blockedBy('Perplexity'), ['PerplexityBot', 'Perplexity-User']);
+  assert.deepEqual(blockedBy('Claude'), ['ClaudeBot', 'Claude-SearchBot', 'Claude-User']);
+});
+
+test('the longest matching user-agent prefix wins', () => {
+  // A site can block the vendor broadly while allowing its indexing crawler.
+  const matrix = crawlerMatrix(
+    'User-agent: Claude\nDisallow: /\n\nUser-agent: Claude-SearchBot\nAllow: /\n\nUser-agent: *\nAllow: /\n',
+    '/',
+  );
+  const byToken = Object.fromEntries(matrix.map((crawler) => [crawler.token, crawler.allowed]));
+  assert.equal(byToken['Claude-SearchBot'], true, 'the more specific group should win');
+  assert.equal(byToken.ClaudeBot, false);
+  assert.equal(byToken['Claude-User'], false);
 });
 
 test('crawlerMatrix marks explicitly named crawlers', () => {

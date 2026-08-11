@@ -180,32 +180,70 @@ export function parseRobots(text) {
   return { groups, sitemaps };
 }
 
-/** Does a robots.txt path pattern (with `*` and `$`) match this path? */
+/**
+ * Does a robots.txt path pattern (with `*` and `$`) match this path?
+ *
+ * A pattern always anchors at the start of the path. Without a trailing `$` it
+ * only has to match a *prefix*; with one it must consume the whole path.
+ *
+ * This is a two-pointer wildcard match rather than a regex, for two reasons.
+ * It backtracks correctly — a naive left-to-right scan that commits to the
+ * first occurrence of each literal reports `/*b$` as not matching `/abcb`,
+ * which wrongly says "allowed" for a page the site actually blocks. And it
+ * runs in O(pattern × path) with no catastrophic backtracking, which matters
+ * because robots.txt is fetched from arbitrary sites: a translated-to-regex
+ * pattern like `/*a*a*a*a*$` would otherwise be a denial-of-service vector
+ * against the hosted worker.
+ */
 function pathMatches(pattern, path) {
   if (pattern === '') return false;
-  if (pattern === '/') return true;
 
   const anchored = pattern.endsWith('$');
   const body = anchored ? pattern.slice(0, -1) : pattern;
-  const segments = body.split('*');
 
-  let cursor = 0;
-  for (let i = 0; i < segments.length; i += 1) {
-    const segment = segments[i];
-    if (segment === '') continue;
-    const found = i === 0 ? (path.startsWith(segment) ? 0 : -1) : path.indexOf(segment, cursor);
-    if (found === -1) return false;
-    cursor = found + segment.length;
-  }
+  let p = 0;
+  let t = 0;
+  let starP = -1;
+  let starT = 0;
 
-  if (anchored) {
-    const tail = segments[segments.length - 1];
-    return segments.length === 1 ? path === body : path.endsWith(tail) && cursor === path.length;
+  for (;;) {
+    if (p === body.length) {
+      // Pattern exhausted: a prefix pattern is satisfied, an anchored one
+      // still needs the path to be exhausted too.
+      if (!anchored || t === path.length) return true;
+    } else if (body[p] === '*') {
+      starP = p;
+      starT = t;
+      p += 1;
+      continue;
+    } else if (t < path.length && body[p] === path[t]) {
+      p += 1;
+      t += 1;
+      continue;
+    }
+
+    // Mismatch, or an anchored pattern with path left over. Give the most
+    // recent `*` one more character and retry from there.
+    if (starP !== -1 && starT < path.length) {
+      starT += 1;
+      t = starT;
+      p = starP + 1;
+      continue;
+    }
+    return false;
   }
-  return true;
 }
 
-/** The most specific group applying to a user-agent token. */
+/**
+ * The most specific group applying to a user-agent token.
+ *
+ * Matching is a case-insensitive *prefix* match on the product token, which is
+ * what real crawlers do: `ClaudeBot` obeys a `User-agent: Claude` group, but
+ * nothing obeys a `User-agent: bot` group, because no product token begins
+ * with "bot". Substring matching would wrongly hand `bot` every crawler whose
+ * name merely contains it — GPTBot, CCBot, Amazonbot — and report a site as
+ * blocking eight answer engines when it blocks none of them.
+ */
 function groupFor(parsed, userAgent) {
   const needle = String(userAgent || '').toLowerCase();
   let best = null;
@@ -218,7 +256,9 @@ function groupFor(parsed, userAgent) {
         wildcard = wildcard || group;
         continue;
       }
-      if (needle.includes(agent) && agent.length > bestLength) {
+      // Longest matching prefix wins, so a group naming `Claude-SearchBot`
+      // beats a broader `Claude` group for that one crawler.
+      if (needle.startsWith(agent) && agent.length > bestLength) {
         best = group;
         bestLength = agent.length;
       }
