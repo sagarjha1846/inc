@@ -21,3 +21,76 @@ jobs:
         run: node --test "test/*.test.js"
       - name: Check the CLI starts and prints help
         run: node bin/citable.js --help
+
+  package:
+    # The published tarball ships a subset of the repo (see "files" in
+    # package.json). Adding a core module without it being included would break
+    # `npx citable` for everyone while every test here still passed, so the
+    # packaged artifact is installed and exercised on its own.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Pack
+        run: npm pack
+
+      - name: Install the tarball into a clean project
+        run: |
+          mkdir -p /tmp/consumer
+          cd /tmp/consumer
+          npm init -y > /dev/null
+          npm install "$GITHUB_WORKSPACE"/citable-*.tgz
+
+      - name: The installed CLI runs
+        working-directory: /tmp/consumer
+        run: |
+          npx citable --version
+          npx citable --help > /dev/null
+
+      - name: The installed library audits, reports and compares
+        working-directory: /tmp/consumer
+        run: |
+          cat > smoke.mjs <<'EOF'
+          import http from 'node:http';
+          import { auditUrl, compareAudits, renderHtml, renderMarkdown } from 'citable';
+
+          let robots = 'User-agent: *\nAllow: /\n';
+          const page = `<!doctype html><html lang="en"><head><title>Caching strategies explained</title>
+          <meta name="description" content="A guide to caching strategies and how each behaves under revalidation."></head>
+          <body><h1>Caching strategies</h1><p>Caching decides what a server never computes twice.</p>
+          <h2>What is stale-while-revalidate?</h2><p>${'It serves cached content and refreshes behind the scenes. '.repeat(25)}</p>
+          </body></html>`;
+
+          const server = http.createServer((req, res) => {
+            if (req.url === '/robots.txt') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end(robots); }
+            if (req.url === '/llms.txt' || req.url === '/sitemap.xml') { res.writeHead(404); return res.end(); }
+            res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+            res.end(page);
+          });
+          await new Promise((r) => server.listen(0, '127.0.0.1', r));
+          const url = `http://127.0.0.1:${server.address().port}/`;
+          const opts = { tier: 'pro', fetchOptions: { allowPrivate: true } };
+
+          const before = await auditUrl(url, opts);
+          robots = 'User-agent: PerplexityBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n';
+          const after = await auditUrl(url, opts);
+          server.close();
+
+          const assert = (cond, msg) => { if (!cond) { console.error('FAIL:', msg); process.exit(1); } };
+          assert(typeof before.score === 'number', 'audit returns a score');
+          assert(after.crawlers.some((c) => c.token === 'PerplexityBot' && !c.allowed), 'detects the blocked crawler');
+
+          const diff = compareAudits(before, after);
+          assert(diff.regressed === true, 'detects the regression');
+          assert(diff.lostCrawlers.length === 1, 'attributes the lost crawler');
+
+          assert(renderHtml(after).startsWith('<!doctype html>'), 'renders HTML');
+          assert(renderMarkdown(after).includes('# AI Visibility Audit'), 'renders Markdown');
+          assert(after.generated.robotsTxt.includes('PerplexityBot'), 'generates the robots patch');
+
+          console.log('packaged build OK — score', before.score, '->', after.score);
+          EOF
+          node smoke.mjs
