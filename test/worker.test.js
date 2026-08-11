@@ -193,3 +193,73 @@ test('/api/health and /api/crawlers expose the registry', async () => {
   const crawlers = await (await worker.fetch(new Request('https://citable.test/api/crawlers'), env)).json();
   assert.ok(crawlers.crawlers.some((crawler) => crawler.token === 'GPTBot'));
 });
+
+/* --------------------------------------------- self-service licence check */
+
+test('/api/license lets a buyer confirm a key without spending an audit', async () => {
+  const { key } = await issueKey({ email: 'buyer@test.co', secret: SECRET, days: 30 });
+  const response = await worker.fetch(new Request(`https://citable.test/api/license?key=${encodeURIComponent(key)}`), env);
+  assert.equal(response.status, 200);
+
+  const data = await response.json();
+  assert.equal(data.valid, true);
+  assert.equal(data.plan, 'pro');
+  assert.equal(data.seats, 1);
+  assert.ok(data.expiresAt);
+
+  // It must not echo the key or the buyer's email back to whoever asked —
+  // anyone can hit this endpoint with a key they found.
+  const body = JSON.stringify(data);
+  assert.ok(!body.includes(key), 'the key must not be echoed');
+  assert.ok(!body.includes('buyer@test.co'), 'the email must not be disclosed');
+});
+
+test('/api/license reports why a key is not accepted', async () => {
+  const expired = await issueKey({ email: 'a@b.c', secret: SECRET, days: -1 });
+  const expiredData = await (await worker.fetch(new Request(`https://citable.test/api/license?key=${encodeURIComponent(expired.key)}`), env)).json();
+  assert.equal(expiredData.valid, false);
+  assert.equal(expiredData.reason, 'expired');
+  assert.ok(expiredData.expiresAt, 'the holder should see when it lapsed');
+
+  const bogus = await (await worker.fetch(new Request('https://citable.test/api/license?key=CTB1.aaa.bbb'), env)).json();
+  assert.equal(bogus.valid, false);
+  assert.equal(bogus.reason, 'malformed');
+
+  const missing = await worker.fetch(new Request('https://citable.test/api/license'), env);
+  assert.equal(missing.status, 400);
+  assert.equal((await missing.json()).error, 'missing_key');
+});
+
+test('/api/license honours revocations supplied by configuration', async () => {
+  const { key, payload } = await issueKey({ email: 'refunded@test.co', secret: SECRET, days: 0 });
+
+  const before = await (await worker.fetch(new Request(`https://citable.test/api/license?key=${encodeURIComponent(key)}`), env)).json();
+  assert.equal(before.valid, true);
+
+  // A refund should be a config change, not a redeploy.
+  const withRevocation = { ...env, REVOKED_KEYS: `someone_else,${payload.i}` };
+  const after = await (await worker.fetch(new Request(`https://citable.test/api/license?key=${encodeURIComponent(key)}`), withRevocation)).json();
+  assert.equal(after.valid, false);
+  assert.equal(after.reason, 'revoked');
+});
+
+test('a revoked key is downgraded to free on the audit endpoint too', async () => {
+  const { key, payload } = await issueKey({ email: 'refunded@test.co', secret: SECRET, days: 0 });
+  await withStubbedFetch({ 'https://widgets.test/': { body: PAGE } }, async () => {
+    const response = await worker.fetch(
+      new Request(`https://citable.test/api/audit?url=https://widgets.test/&key=${encodeURIComponent(key)}`),
+      { ...env, REVOKED_KEYS: payload.i },
+    );
+    const data = await response.json();
+    assert.equal(data.tier, 'free');
+    assert.match(data.licenseWarning, /revoked/);
+  });
+});
+
+test('/api/license accepts a bearer token as well as a query parameter', async () => {
+  const { key } = await issueKey({ email: 'a@b.c', secret: SECRET, days: 30 });
+  const data = await (
+    await worker.fetch(new Request('https://citable.test/api/license', { headers: { authorization: `Bearer ${key}` } }), env)
+  ).json();
+  assert.equal(data.valid, true);
+});

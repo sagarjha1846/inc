@@ -15,8 +15,29 @@ const PREFIX = 'CTB1';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** Key ids revoked after refund or public leak. Checked on every verify. */
+/**
+ * Key ids revoked after a refund or a public leak.
+ *
+ * Compiled-in entries are the fallback. Prefer passing revocations at call
+ * time — the worker reads them from a `REVOKED_KEYS` environment variable — so
+ * that processing a refund is a config change rather than a source edit and a
+ * redeploy. Requiring a deploy per refund is the kind of friction that ends
+ * with revocations simply not happening.
+ */
 export const REVOKED_KEY_IDS = new Set([]);
+
+/** Parse a comma/whitespace separated revocation list from config. */
+export function parseRevoked(value) {
+  if (!value) return new Set();
+  if (value instanceof Set) return value;
+  if (Array.isArray(value)) return new Set(value.map((entry) => String(entry).trim()).filter(Boolean));
+  return new Set(
+    String(value)
+      .split(/[\s,]+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  );
+}
 
 function toBase64Url(bytes) {
   let binary = '';
@@ -69,7 +90,8 @@ export async function issueKey({ email, plan = 'pro', days = 365, seats = 1, sec
  * Verify a key.
  * Always resolves — an invalid key is a normal outcome, not an exception.
  */
-export async function verifyKey(key, secret) {
+export async function verifyKey(key, secret, options = {}) {
+  const revoked = parseRevoked(options.revoked);
   const raw = String(key || '').trim();
   if (!raw) return { valid: false, reason: 'missing' };
 
@@ -94,7 +116,9 @@ export async function verifyKey(key, secret) {
   }
   if (!signatureOk) return { valid: false, reason: 'bad_signature' };
 
-  if (REVOKED_KEY_IDS.has(payload.i)) return { valid: false, reason: 'revoked', payload };
+  if (REVOKED_KEY_IDS.has(payload.i) || revoked.has(payload.i)) {
+    return { valid: false, reason: 'revoked', payload };
+  }
 
   const now = Math.floor(Date.now() / 1000);
   if (payload.x && payload.x < now) {
@@ -120,9 +144,9 @@ function timingSafeEqual(a, b) {
 }
 
 /** Resolve the tier for a request, given an optional key. */
-export async function tierFor(key, secret) {
+export async function tierFor(key, secret, options = {}) {
   if (!key) return { tier: 'free', license: null };
   if (!secret) return { tier: 'free', license: { valid: false, reason: 'no_secret_configured' } };
-  const license = await verifyKey(key, secret);
+  const license = await verifyKey(key, secret, options);
   return { tier: license.valid && license.plan !== 'free' ? 'pro' : 'free', license };
 }

@@ -115,16 +115,35 @@ thing that can break at 3am, and manual issuance catches card fraud for free.
 
 ### Refunds and leaked keys
 
-Keys are signed rather than stored, so revocation is a deny-list. Add the key id (shown
-when the key was issued, and recorded in `licenses.ndjson`) to `REVOKED_KEY_IDS` in
-`src/core/license.js`, then redeploy:
+Keys are signed rather than stored, so revocation is a deny-list. It lives in
+configuration rather than in code, so processing a refund does not mean editing source
+and redeploying:
 
-```js
-export const REVOKED_KEY_IDS = new Set(['k_tjm2nuhtauwh']);
+```bash
+wrangler secret put REVOKED_KEYS
+# paste a comma-separated list of key ids, e.g. k_tjm2nuhtauwh,k_9f2x1abc
 ```
+
+The key id is printed when the key is issued and recorded in `licenses.ndjson`. The CLI
+honours the same list via `CITABLE_REVOKED_KEYS`.
+
+A revoked key does not error — it silently drops to the free tier, with the reason
+reported in `licenseWarning`.
 
 Annual keys expire on their own, which limits the blast radius of a leak you never
 notice.
+
+### Letting buyers check their own key
+
+`GET /api/license?key=CTB1...` reports whether a key is valid, its plan, seat count and
+expiry — without spending an audit. Point people at it before they email you:
+
+```bash
+curl "https://citable.<you>.workers.dev/api/license?key=CTB1..."
+{ "valid": true, "reason": null, "plan": "pro", "seats": 1, "expiresAt": "2027-02-11T..." }
+```
+
+It never echoes the key or the buyer's email back, so it is safe to share the URL.
 
 ## 4. Verify the whole loop before announcing
 
@@ -138,6 +157,9 @@ CITABLE_KEY="CTB1..." node bin/citable.js example.com --json | jq '.tier, .gener
 
 # And on the hosted app
 curl "https://citable.<you>.workers.dev/api/audit?url=example.com&key=CTB1..." | jq '.tier'
+
+# The licence endpoint should agree
+curl "https://citable.<you>.workers.dev/api/license?key=CTB1..." | jq '.valid'
 ```
 
 If the hosted call returns `"free"` with a `licenseWarning`, the two secrets do not

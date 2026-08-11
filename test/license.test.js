@@ -78,3 +78,53 @@ test('tierFor maps keys to tiers and fails closed', async () => {
   const freePlan = await issueKey({ email: 'a@b.c', secret: SECRET, plan: 'free' });
   assert.equal((await tierFor(freePlan.key, SECRET)).tier, 'free');
 });
+
+/* ------------------------------------------------- config-driven revocation */
+
+import { parseRevoked } from '../src/core/license.js';
+
+test('parseRevoked accepts the shapes a config value can arrive in', () => {
+  assert.deepEqual([...parseRevoked('k_one,k_two')], ['k_one', 'k_two']);
+  assert.deepEqual([...parseRevoked(' k_one , k_two ')], ['k_one', 'k_two']);
+  assert.deepEqual([...parseRevoked('k_one k_two\nk_three')], ['k_one', 'k_two', 'k_three']);
+  assert.deepEqual([...parseRevoked(['k_one', ' k_two '])], ['k_one', 'k_two']);
+  assert.deepEqual([...parseRevoked(new Set(['k_one']))], ['k_one']);
+  // Empty and absent config must not revoke anything.
+  for (const empty of ['', '   ', null, undefined, ',,,']) {
+    assert.equal(parseRevoked(empty).size, 0, `${JSON.stringify(empty)} should revoke nothing`);
+  }
+});
+
+test('a key can be revoked through config without a code change', async () => {
+  // Processing a refund should be a config edit, not a source edit plus a
+  // redeploy — friction there ends with revocations not happening at all.
+  const { key, payload } = await issueKey({ email: 'refunded@example.com', secret: SECRET, days: 0 });
+  assert.equal((await verifyKey(key, SECRET)).valid, true);
+
+  const revokedResult = await verifyKey(key, SECRET, { revoked: `other_id,${payload.i}` });
+  assert.equal(revokedResult.valid, false);
+  assert.equal(revokedResult.reason, 'revoked');
+
+  // Other keys signed with the same secret are unaffected.
+  const other = await issueKey({ email: 'still-a-customer@example.com', secret: SECRET, days: 0 });
+  assert.equal((await verifyKey(other.key, SECRET, { revoked: payload.i })).valid, true);
+});
+
+test('tierFor passes revocations through to verification', async () => {
+  const { key, payload } = await issueKey({ email: 'a@b.c', secret: SECRET, days: 30 });
+  assert.equal((await tierFor(key, SECRET)).tier, 'pro');
+
+  const resolved = await tierFor(key, SECRET, { revoked: payload.i });
+  assert.equal(resolved.tier, 'free');
+  assert.equal(resolved.license.reason, 'revoked');
+});
+
+test('revocation is checked only after the signature, so forgeries stay forgeries', async () => {
+  // A revoked-but-unsigned key must report the signature problem rather than
+  // leaking that the id was on the deny-list.
+  const { payload } = await issueKey({ email: 'a@b.c', secret: SECRET });
+  const forged = `CTB1.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`;
+  const result = await verifyKey(forged, SECRET, { revoked: payload.i });
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, 'bad_signature');
+});

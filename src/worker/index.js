@@ -8,7 +8,7 @@
 
 import { auditUrl } from '../core/audit.js';
 import { renderHtml, renderMarkdown } from '../core/report.js';
-import { tierFor } from '../core/license.js';
+import { tierFor, verifyKey } from '../core/license.js';
 import { AI_CRAWLERS } from '../core/robots.js';
 import { FetchError } from '../core/fetch.js';
 import { renderApp } from './ui.js';
@@ -92,6 +92,11 @@ export default {
       case '/api/crawlers':
         return json({ crawlers: AI_CRAWLERS });
 
+      // Lets a buyer confirm their key works without spending an audit on it,
+      // which is most of what a support email would otherwise ask.
+      case '/api/license':
+        return handleLicense(request, env, url);
+
       case '/api/audit':
         return handleAudit(request, env, url);
 
@@ -151,7 +156,7 @@ async function handleAudit(request, env, url) {
     );
   }
 
-  const { tier, license } = await tierFor(key, env.LICENSE_SECRET);
+  const { tier, license } = await tierFor(key, env.LICENSE_SECRET, { revoked: env.REVOKED_KEYS });
 
   try {
     const result = await auditUrl(target, {
@@ -185,6 +190,23 @@ async function handleAudit(request, env, url) {
   }
 }
 
+async function handleLicense(request, env, url) {
+  const key = url.searchParams.get('key') || (request.headers.get('authorization') || '').replace(/^bearer /i, '').trim();
+  if (!key) return json({ error: 'missing_key', message: 'Pass a `key` to check.' }, 400);
+  if (!env.LICENSE_SECRET) return json({ valid: false, reason: 'no_secret_configured' }, 503);
+
+  const license = await verifyKey(key, env.LICENSE_SECRET, { revoked: env.REVOKED_KEYS });
+  // Deliberately never echoes the key back, and reports only what the holder
+  // already knows about their own licence.
+  return json({
+    valid: license.valid,
+    reason: license.valid ? null : license.reason,
+    plan: license.valid ? license.plan : null,
+    seats: license.valid ? license.seats : null,
+    expiresAt: license.valid ? license.expiresAt : (license.expiredAt ?? null),
+  });
+}
+
 function ownRobots(origin) {
   const citation = AI_CRAWLERS.filter((crawler) => crawler.purpose !== 'training');
   const lines = ['# Citable — we practise what we audit.', ''];
@@ -211,6 +233,8 @@ function ownLlms(origin) {
 - [Home](${origin}/): Run a free audit on any URL.
 - [API](${origin}/api/audit?url=example.com): JSON audit endpoint. Pass \`url\`, optional \`key\`, optional \`format=markdown\`.
 - [Crawler registry](${origin}/api/crawlers): Every AI crawler Citable tracks, with vendor, surface and purpose.
+- [Licence check](${origin}/api/license): Confirm a Pro key without running an audit.
+- [Sample report](${origin}/demo): A full Pro-tier audit of an example page.
 
 ## What it checks
 

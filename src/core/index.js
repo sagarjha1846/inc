@@ -12,6 +12,6 @@ export { generateAll, generateRobotsPatch, generateLlmsTxt, generateJsonLd, gene
 export { renderMarkdown, renderSiteMarkdown, renderTerminal, renderHtml, renderSiteHtml } from './report.js';
 export { compareAudits, renderComparison, renderComparisonMarkdown } from './compare.js';
 export { AI_CRAWLERS, CITATION_CRAWLERS, parseRobots, isAllowed, crawlerMatrix } from './robots.js';
-export { issueKey, verifyKey, tierFor } from './license.js';
+export { issueKey, verifyKey, tierFor, parseRevoked, REVOKED_KEY_IDS } from './license.js';
 export { fetchPage, fetchOptional, normalizeUrl, FetchError, DEFAULT_USER_AGENT } from './fetch.js';
 export * as html from './html.js';

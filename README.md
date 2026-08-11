@@ -220,7 +220,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, and
 ## Development
 
 ```bash
-node --test "test/*.test.js"   # 115 tests, no install step
+node --test "test/*.test.js"   # 124 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```

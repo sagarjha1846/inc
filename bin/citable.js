@@ -202,7 +202,7 @@ function parseArgs(argv) {
 async function resolveTier(key) {
   const secret = process.env.CITABLE_LICENSE_SECRET || (await loadBundledSecret());
   if (!key) return { tier: 'free', license: null };
-  const resolved = await tierFor(key, secret);
+  const resolved = await tierFor(key, secret, { revoked: process.env.CITABLE_REVOKED_KEYS });
   if (resolved.tier !== 'pro') {
     const reason = resolved.license && resolved.license.reason;
     process.stderr.write(`citable: license key not accepted (${reason || 'invalid'}); continuing on the free tier.\n`);
