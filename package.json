@@ -1,0 +1,45 @@
+{
+  "name": "citable",
+  "version": "0.1.0",
+  "description": "Audit whether AI answer engines (ChatGPT, Claude, Perplexity, Google AI Overviews) can crawl, read, and cite your website.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "citable": "./bin/citable.js"
+  },
+  "exports": {
+    ".": "./src/core/index.js"
+  },
+  "files": [
+    "bin",
+    "src/core",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/",
+    "audit": "node bin/citable.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "keygen": "node scripts/issue-key.mjs"
+  },
+  "keywords": [
+    "seo",
+    "aeo",
+    "geo",
+    "llm",
+    "ai-search",
+    "answer-engine-optimization",
+    "llms-txt",
+    "structured-data",
+    "gptbot",
+    "claudebot",
+    "perplexity",
+    "audit"
+  ],
+  "dependencies": {},
+  "devDependencies": {}
+}
