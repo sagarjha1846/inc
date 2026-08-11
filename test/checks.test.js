@@ -347,3 +347,62 @@ test('registrable domains are compared under multi-part public suffixes', () => 
   );
   assert.equal(different.severity, 'pass', 'genuinely different .uk organisations');
 });
+
+/* --------------------------------------------- scope of robots directives */
+
+/** Run the directives check with the given head markup and response headers. */
+function directives(head, headers = {}) {
+  const html = `<!doctype html><html lang="en"><head><title>A page about things</title>${head}</head><body>${BODY}</body></html>`;
+  const { findings } = runChecks({
+    url: 'https://a.test/',
+    page: {
+      body: html, status: 200, ok: true,
+      headers: { 'content-type': 'text/html; charset=utf-8', ...headers },
+      elapsedMs: 5, bytes: html.length, redirects: [], truncated: false, finalUrl: 'https://a.test/',
+    },
+  });
+  return find(findings, 'snippet-directives');
+}
+
+test('an unscoped noindex blocks every engine', () => {
+  assert.equal(directives('<meta name="robots" content="noindex">').severity, 'critical');
+  assert.equal(directives('', { 'x-robots-tag': 'noindex' }).severity, 'critical');
+});
+
+test('an unscoped snippet cap is serious but not blocking', () => {
+  assert.equal(directives('<meta name="robots" content="nosnippet">').severity, 'high');
+  assert.equal(directives('<meta name="robots" content="max-snippet:0">').severity, 'high');
+});
+
+test('a directive addressed to one crawler binds only that crawler', () => {
+  // Opting out of Google is a legitimate, often deliberate choice, and it does
+  // nothing to ChatGPT or Perplexity. Reporting it as a blanket critical tells
+  // the reader they are invisible everywhere when they are not.
+  for (const finding of [
+    directives('<meta name="googlebot" content="noindex">'),
+    directives('', { 'x-robots-tag': 'googlebot: noindex' }),
+  ]) {
+    assert.equal(finding.severity, 'medium');
+    assert.match(finding.title, /googlebot/);
+    assert.match(finding.impact, /ChatGPT, Claude and Perplexity are unaffected/);
+  }
+});
+
+test('an unscoped directive still wins when a scoped one is also present', () => {
+  const finding = directives('<meta name="robots" content="noindex"><meta name="googlebot" content="nosnippet">');
+  assert.equal(finding.severity, 'critical');
+  // The scoped directive belongs in the evidence even though the global one
+  // decides the verdict.
+  assert.match(finding.evidence, /googlebot/);
+});
+
+test('max-snippet is not mistaken for a crawler prefix', () => {
+  // Both carry a colon; only one of them names a crawler.
+  assert.equal(directives('', { 'x-robots-tag': 'max-snippet: 0' }).severity, 'high');
+  assert.equal(directives('', { 'x-robots-tag': 'max-snippet:-1' }).severity, 'pass');
+});
+
+test('the word noindex in ordinary prose is not a directive', () => {
+  const finding = directives('<meta name="description" content="A guide to using noindex and nosnippet correctly.">');
+  assert.equal(finding.severity, 'pass');
+});

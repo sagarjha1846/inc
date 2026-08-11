@@ -55,6 +55,67 @@ function finding(input) {
 
 /* ------------------------------------------------------------------ access */
 
+/**
+ * Meta names that address one crawler rather than all of them. Anything else
+ * named in a `<meta>` is not a robots directive at all, so it must not be read
+ * as one — `<meta name="description" content="how to use noindex">` is prose.
+ */
+const KNOWN_BOT_META = new Set([
+  'googlebot',
+  'googlebot-news',
+  'google-extended',
+  'bingbot',
+  'msnbot',
+  'slurp',
+  'duckduckbot',
+  'baiduspider',
+  'yandex',
+  'applebot',
+]);
+
+/**
+ * Split an `X-Robots-Tag` header into its scopes.
+ *
+ * The header may carry bare directives, or prefix them with a crawler name:
+ * `X-Robots-Tag: googlebot: noindex, nosnippet`. A bare list binds everyone; a
+ * prefixed one binds only that crawler, and the prefix governs the directives
+ * that follow it until another prefix appears.
+ */
+function parseXRobotsTag(value) {
+  const out = [];
+  let scope = '';
+  let buffer = [];
+
+  const flush = () => {
+    if (buffer.length) {
+      out.push({
+        scope,
+        source: scope ? `X-Robots-Tag (${scope})` : 'X-Robots-Tag',
+        text: buffer.join(',').toLowerCase(),
+      });
+    }
+    buffer = [];
+  };
+
+  for (const segment of String(value || '').split(',')) {
+    const trimmed = segment.trim();
+    if (!trimmed) continue;
+
+    // `max-snippet: 0` is a directive with a colon, not a crawler prefix, so a
+    // prefix only counts when the name before the colon is a known crawler.
+    const match = /^([a-z0-9][a-z0-9._-]*)\s*:\s*(.*)$/i.exec(trimmed);
+    if (match && KNOWN_BOT_META.has(match[1].toLowerCase())) {
+      flush();
+      scope = match[1].toLowerCase();
+      if (match[2]) buffer.push(match[2]);
+      continue;
+    }
+    buffer.push(trimmed);
+  }
+  flush();
+  return out;
+}
+
 function checkAccess(ctx) {
   const out = [];
   const { page, robots, url } = ctx;
@@ -200,21 +261,37 @@ function checkAccess(ctx) {
   }
 
   // 3. Snippet-suppressing directives, in meta and in headers.
+  //
+  // Scope is the whole point here. A directive addressed to one crawler binds
+  // only that crawler: `<meta name="googlebot" content="noindex">` keeps a page
+  // out of Google, and does nothing at all to ChatGPT or Perplexity. Matching
+  // the word "noindex" anywhere and calling the page suppressed reports a site
+  // as invisible to every answer engine when it deliberately opted out of one.
   const allMeta = metaTags(ctx.html);
-  const robotsMeta = [...(allMeta.get('robots') || []), ...(allMeta.get('googlebot') || [])]
-    .join(',')
-    .toLowerCase();
-  const xRobots = String(page.headers['x-robots-tag'] || '').toLowerCase();
-  const directives = `${robotsMeta},${xRobots}`;
+  const scopes = [
+    { scope: '', source: 'meta robots', text: (allMeta.get('robots') || []).join(',').toLowerCase() },
+    ...[...allMeta.keys()]
+      .filter((name) => name !== 'robots' && KNOWN_BOT_META.has(name))
+      .map((name) => ({ scope: name, source: `meta ${name}`, text: (allMeta.get(name) || []).join(',').toLowerCase() })),
+    ...parseXRobotsTag(String(page.headers['x-robots-tag'] || '')),
+  ].filter((entry) => entry.text);
 
-  const blockers = [];
-  if (/\bnoindex\b/.test(directives)) blockers.push('noindex');
-  if (/\bnosnippet\b/.test(directives)) blockers.push('nosnippet');
-  if (/\bnoarchive\b/.test(directives)) blockers.push('noarchive');
-  if (/max-snippet\s*:\s*0/.test(directives)) blockers.push('max-snippet:0');
-  if (/\bnoai\b/.test(directives)) blockers.push('noai');
+  const suppressing = [];
+  for (const entry of scopes) {
+    const found = [];
+    if (/\bnoindex\b/.test(entry.text)) found.push('noindex');
+    if (/\bnosnippet\b/.test(entry.text)) found.push('nosnippet');
+    if (/\bnoarchive\b/.test(entry.text)) found.push('noarchive');
+    if (/max-snippet\s*:\s*0\b/.test(entry.text)) found.push('max-snippet:0');
+    if (/\bnoai\b/.test(entry.text)) found.push('noai');
+    if (found.length) suppressing.push({ ...entry, found });
+  }
 
-  if (blockers.length) {
+  const global = suppressing.filter((entry) => !entry.scope);
+  const scoped = suppressing.filter((entry) => entry.scope);
+
+  if (global.length) {
+    const blockers = [...new Set(global.flatMap((entry) => entry.found))];
     out.push(
       finding({
         id: 'snippet-directives',
@@ -222,13 +299,30 @@ function checkAccess(ctx) {
         severity: blockers.includes('noindex') ? 'critical' : 'high',
         title: `Robots directives suppress this page: ${blockers.join(', ')}`,
         detail:
-          'Even with crawling allowed, these directives tell engines not to index the page or not to quote from it. AI Overviews and search-backed assistants honour them, so the page is fetched and then discarded.',
-        evidence: [robotsMeta && `<meta name="robots" content="${robotsMeta}">`, xRobots && `X-Robots-Tag: ${xRobots}`]
-          .filter(Boolean)
-          .join('\n'),
+          'Even with crawling allowed, these directives tell engines not to index the page or not to quote from it. They are addressed to every crawler, so AI Overviews and search-backed assistants fetch the page and then discard it.',
+        evidence: suppressing.map((entry) => `${entry.source}: ${entry.text}`).join('\n'),
         impact: 'Google AI Overviews, Bing/Copilot, and any engine that respects snippet controls.',
         fix: 'Remove the offending directives, or set `max-snippet:-1` if you had capped snippet length.',
         earned: 0,
+        max: 6,
+      }),
+    );
+  } else if (scoped.length) {
+    const names = [...new Set(scoped.map((entry) => entry.scope))];
+    out.push(
+      finding({
+        id: 'snippet-directives',
+        category: 'access',
+        severity: 'medium',
+        title: `Suppressed for ${names.join(', ')} only`,
+        detail:
+          'These directives name a specific crawler, so they bind that crawler alone. Other answer engines may still index and quote this page. Flagged because opting out of one search surface is usually deliberate, and worth confirming it was.',
+        evidence: scoped.map((entry) => `${entry.source}: ${entry.text}`).join('\n'),
+        impact: names.some((name) => name.includes('google'))
+          ? 'Google AI Overviews only. ChatGPT, Claude and Perplexity are unaffected.'
+          : 'Limited to the named crawler.',
+        fix: 'No action needed if this opt-out is intentional.',
+        earned: 4,
         max: 6,
       }),
     );
