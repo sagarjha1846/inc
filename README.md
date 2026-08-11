@@ -12,25 +12,40 @@ npx citable yoursite.com
 ```
 
 ```
-https://yoursite.com/
-62/100 (D)  Weak. AI engines can reach this page but have little reason to quote it.
+https://yoursite.com/pricing
+60/100 (D)  Not citable as it stands — 1 blocking issue prevents AI engines from using this page.
 
-  Crawler access     ███████████████░░░░░░░░░   19/30
-  Readable content   ████████████████████████   25/25
-  Answer structure   ███████░░░░░░░░░░░░░░░░░    5/15
+  Crawler access     █████████████████░░░░░░░ 20.6/30
+  Readable content   ██████████████████████░░ 22.5/25
+  Answer structure   ███████████████████░░░░░   12/15
   Structured data    ░░░░░░░░░░░░░░░░░░░░░░░░    0/15
-  Metadata           ████████████████████░░░░    8/10
-  Authority signals  ██████████░░░░░░░░░░░░░░    2/5
+  Metadata           ███████████░░░░░░░░░░░░░  4.5/10
+  Authority signals  ░░░░░░░░░░░░░░░░░░░░░░░░    0/5
 
-  Blocked crawlers: PerplexityBot, OAI-SearchBot
+  Blocked crawlers: OAI-SearchBot, PerplexityBot
 
-Findings (11 open)
+Findings (15 open)
 
-  1. [CRITICAL] 2 answer-engine crawler(s) blocked by robots.txt
-     These crawlers are the ones that fetch pages in order to answer live questions.
-     While they are disallowed, this page cannot appear as a citation in the surfaces
-     listed below, no matter how good the content is.
-     → Add explicit Allow rules for these user-agents.
+  1. [CRITICAL] Invisible to ChatGPT Search and Perplexity — blocked by robots.txt
+     These crawlers are the ones that fetch pages in order to answer live questions. While they
+     are disallowed, this page cannot appear as a citation in the surfaces listed below, no
+     matter how good the content is.
+     → Add explicit Allow rules for these user-agents (see the generated robots.txt patch in this
+     report).
+
+  2. [HIGH] No JSON-LD structured data
+     Structured data is how you state facts about the page in a form no model has to infer: who
+     wrote it, what it is about, when it changed, what entity it belongs to. Without it,
+     attribution depends entirely on the engine guessing correctly.
+     → Add a JSON-LD block — the report generates one tailored to this page.
+
+  3. [MEDIUM] No Organization or Person entity
+     Nothing on the page tells an engine which organisation or person stands behind it, so
+     citations are less likely to name you.
+     → Add an Organization node with `name`, `url`, `logo` and `sameAs` links to your official
+     profiles.
+
+  12 more finding(s) + generated robots.txt / llms.txt / JSON-LD available with a Pro key.
 ```
 
 ---
@@ -60,7 +75,7 @@ Both failures are silent. Nothing in your analytics tells you a citation didn't 
 | Answer structure | 15 | Single H1, heading hierarchy, question-shaped headings, lists and tables, a quotable opening paragraph |
 | Structured data | 15 | JSON-LD validity, publisher entity, page-type schema |
 | Metadata | 10 | Title, description, canonical, `lang`, Open Graph |
-| Authority | 5 | Authorship, freshness dates, outbound citations |
+| Authority signals | 5 | Authorship, freshness dates, outbound citations |
 
 Every finding carries the evidence it was based on, which answer surfaces it costs you,
 and the specific change that fixes it.
@@ -200,7 +215,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, and
 ## Development
 
 ```bash
-node --test "test/*.test.js"   # 104 tests, no install step
+node --test "test/*.test.js"   # 111 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```
