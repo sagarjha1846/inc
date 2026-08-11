@@ -17,6 +17,7 @@ import {
   jsonLdBlocks,
   jsonLdTypes,
   linkRel,
+  mainContent,
   links as extractLinks,
   meta,
   metaTags,
@@ -499,19 +500,37 @@ function checkContent(ctx) {
     );
   }
 
-  // Depth relative to what gets cited in practice.
-  const depthScore = words >= 900 ? 6 : words >= 500 ? 5 : words >= 300 ? 3.5 : words >= 150 ? 2 : 0;
+  // Depth relative to what gets cited in practice, measured on the page's own
+  // content. Nav and footer links appear on every page of a site, so counting
+  // them reports a thin page as a deep one.
+  const contentHtml = mainContent(html);
+  const contentText = visibleText(contentHtml);
+  const contentWords = wordCount(contentText);
+  ctx.contentHtml = contentHtml;
+  ctx.contentText = contentText;
+  ctx.contentWords = contentWords;
+
+  // Deliberately not the document-wide `words` above: that one answers "what
+  // does a crawler receive", which is the right question for client rendering.
+  // This one answers "how much of it is this page's own substance".
+  const depthScore =
+    contentWords >= 900 ? 6 : contentWords >= 500 ? 5 : contentWords >= 300 ? 3.5 : contentWords >= 150 ? 2 : 0;
+  const chromeWords = words - contentWords;
   out.push(
     finding({
       id: 'content-depth',
       category: 'content',
-      severity: words >= 500 ? 'pass' : words >= 300 ? 'low' : 'medium',
-      title: `${words} words of readable content`,
+      severity: contentWords >= 500 ? 'pass' : contentWords >= 300 ? 'low' : 'medium',
+      title: `${contentWords} words of readable content`,
       detail:
-        words >= 500
+        contentWords >= 500
           ? 'Enough depth for an engine to extract a specific answer rather than a vague summary.'
           : 'Pages cited by answer engines skew long because depth gives the model more extractable claims. This page gives it little to work with.',
-      fix: words >= 500 ? null : 'Expand the page with specifics: definitions, numbers, steps, comparisons, and edge cases.',
+      evidence:
+        chromeWords > contentWords
+          ? `${contentWords} words in the page's own content; ${chromeWords} more are navigation, header or footer, which repeat on every page and are not counted.`
+          : null,
+      fix: contentWords >= 500 ? null : 'Expand the page with specifics: definitions, numbers, steps, comparisons, and edge cases.',
       earned: depthScore,
       max: 6,
     }),
@@ -660,9 +679,12 @@ function checkStructure(ctx) {
     }),
   );
 
-  // Lists and tables are disproportionately quoted by answer engines.
-  const lists = countTag(html, 'ul') + countTag(html, 'ol');
-  const tables = countTag(html, 'table');
+  // Lists and tables are disproportionately quoted by answer engines — but a
+  // nav menu and a footer link list are neither, and every page on the site
+  // carries them.
+  const contentMarkup = ctx.contentHtml || mainContent(html);
+  const lists = countTag(contentMarkup, 'ul') + countTag(contentMarkup, 'ol');
+  const tables = countTag(contentMarkup, 'table');
   out.push(
     finding({
       id: 'extractable-blocks',
@@ -679,8 +701,12 @@ function checkStructure(ctx) {
     }),
   );
 
-  // A direct answer near the top is what gets lifted verbatim.
-  const opening = text.split('\n').filter((line) => line.trim().length > 60)[0] || '';
+  // A direct answer near the top is what gets lifted verbatim. Taken from the
+  // content region, because the first long line in the raw document is
+  // routinely a cookie notice — and quoting that back as the page's answer is
+  // both wrong and embarrassing in a report someone paid for.
+  const openingSource = ctx.contentText || visibleText(mainContent(html));
+  const opening = openingSource.split('\n').filter((line) => line.trim().length > 60)[0] || '';
   const hasDirectOpening = opening.length >= 60 && opening.length <= 400;
   out.push(
     finding({

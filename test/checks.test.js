@@ -406,3 +406,65 @@ test('the word noindex in ordinary prose is not a directive', () => {
   const finding = directives('<meta name="description" content="A guide to using noindex and nosnippet correctly.">');
   assert.equal(finding.severity, 'pass');
 });
+
+/* ----------------------------------------- site chrome vs page content */
+
+const CHROME_NAV = `<nav><ul>${Array.from({ length: 24 }, (_, i) => `<li><a href="/s${i}">Solutions for enterprise teams ${i}</a></li>`).join('')}</ul></nav>`;
+const CHROME_FOOTER = `<footer><ul>${Array.from({ length: 30 }, (_, i) => `<li><a href="/f${i}">Company resource link number ${i}</a></li>`).join('')}</ul><p>Copyright 2026 Acme Corporation. Registered in England and Wales, company number 1234567.</p></footer>`;
+const COOKIE_BANNER = `<div id="cookie"><p>We use cookies and similar technologies to improve your experience, analyse traffic and personalise content. By clicking accept you agree to our cookie policy.</p></div>`;
+const ARTICLE = `<h1>What is a widget?</h1><p>A widget is a small mechanical component used to couple two shafts together.</p>`;
+
+const page = (body) => `<!doctype html><html lang="en"><head><title>What is a widget?</title></head><body>${body}</body></html>`;
+
+test('site chrome does not change the verdict on a page', () => {
+  // The same content, bare and inside an ordinary template. Nav and footer
+  // appear on every page of a site, so counting them makes a thin page look
+  // deep and hands it lists it does not have.
+  const bare = check(page(`<main>${ARTICLE}</main>`)).findings;
+  const wrapped = check(page(`${COOKIE_BANNER}${CHROME_NAV}<main>${ARTICLE}</main>${CHROME_FOOTER}`)).findings;
+
+  for (const id of ['content-depth', 'extractable-blocks', 'direct-answer']) {
+    assert.equal(
+      find(wrapped, id).severity,
+      find(bare, id).severity,
+      `${id} should not be changed by surrounding chrome`,
+    );
+  }
+  assert.equal(find(wrapped, 'content-depth').title, find(bare, 'content-depth').title);
+});
+
+test('the quoted opening answer comes from the content, not a cookie banner', () => {
+  const { findings } = check(page(`${COOKIE_BANNER}${CHROME_NAV}<main>${ARTICLE}</main>`));
+  const finding = find(findings, 'direct-answer');
+  assert.match(finding.evidence, /A widget is a small mechanical component/);
+  assert.doesNotMatch(finding.evidence, /cookies/i);
+});
+
+test('a nav menu is not counted as an extractable list', () => {
+  const { findings } = check(page(`${CHROME_NAV}<main>${ARTICLE}</main>${CHROME_FOOTER}`));
+  assert.notEqual(find(findings, 'extractable-blocks').severity, 'pass');
+});
+
+test('a real list inside the content still counts', () => {
+  const { findings } = check(page(`${CHROME_NAV}<main>${ARTICLE}<ul><li>Steel</li><li>Brass</li></ul></main>`));
+  assert.equal(find(findings, 'extractable-blocks').severity, 'pass');
+});
+
+test('depth explains itself when chrome dominates the page', () => {
+  const { findings } = check(page(`${CHROME_NAV}<main>${ARTICLE}</main>${CHROME_FOOTER}`));
+  assert.match(find(findings, 'content-depth').evidence, /navigation, header or footer/);
+});
+
+test('chrome is excluded without a <main> element too', () => {
+  const withoutMain = check(page(`${CHROME_NAV}${ARTICLE}${CHROME_FOOTER}`)).findings;
+  assert.notEqual(find(withoutMain, 'extractable-blocks').severity, 'pass');
+});
+
+test('a page that is entirely inside <nav> is not trimmed to nothing', () => {
+  // The fallback strips by regex, which cannot track nesting. Over-trimming
+  // would invent a failure on a page that is fine, so an implausible result is
+  // discarded in favour of the whole document.
+  const odd = `<nav>${ARTICLE}<p>${'Genuine body copy that happens to live inside a nav element. '.repeat(20)}</p></nav>`;
+  const { findings } = check(page(odd));
+  assert.notEqual(find(findings, 'content-depth').title, '0 words of readable content');
+});

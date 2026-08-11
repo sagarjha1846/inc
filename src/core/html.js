@@ -280,3 +280,54 @@ export function countTag(html, tagName) {
   const matches = (html || '').match(re);
   return matches ? matches.length : 0;
 }
+
+/**
+ * The markup for the page's own content, with site chrome removed.
+ *
+ * Navigation, footers and cookie banners are part of every page on a site, so
+ * counting them as this page's content inflates every measure of substance.
+ * A 20-word page inside an ordinary template reports hundreds of words, passes
+ * a "has lists and tables" check on the strength of its nav menu, and offers
+ * the cookie notice as its opening answer.
+ *
+ * Preference order is `<main>`, then `<article>`, then the body with the
+ * semantic chrome elements removed. If that leaves implausibly little text the
+ * whole document is used instead: over-trimming would invent failures on pages
+ * that are perfectly fine, which is a worse error than counting some chrome.
+ */
+export function mainContent(html) {
+  const source = html || '';
+
+  // `<main>` and `<article>` are the author saying where the content is. They
+  // are taken at their word even when what they contain is very small relative
+  // to the page: a thin page inside a heavy template is precisely the case this
+  // exists to reveal, so a "that trimmed too much" guard here would suppress
+  // the finding it is meant to surface.
+  const main = findTags(source, 'main')[0];
+  if (main && main.inner.trim()) return main.inner;
+
+  const articles = findTags(source, 'article').filter((tag) => tag.inner.trim());
+  if (articles.length) return articles.map((tag) => tag.inner).join('\n');
+
+  // No declared content region, so fall back to removing the chrome elements.
+  // This path is a guess rather than a statement of intent — regex removal
+  // cannot track nesting — so it is checked before being trusted.
+  let stripped = source;
+  for (const tag of ['nav', 'header', 'footer', 'aside']) {
+    stripped = stripped.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}\\s*>`, 'gi'), ' ');
+  }
+
+  // Deciding whether the strip went wrong cannot be done on how much text it
+  // removed: a thin page under a heavy template legitimately loses most of its
+  // words, and that is the case worth reporting. What distinguishes a bad strip
+  // is that it took the content *with* the chrome — which happens when a
+  // chrome element wraps the page, or is left unclosed. The h1 is the marker:
+  // it belongs to the content, so if it did not survive, the strip overreached.
+  const h1 = headings(source).find((heading) => heading.level === 1 && heading.text);
+  if (h1) return headings(stripped).some((heading) => heading.text === h1.text) ? stripped : source;
+
+  // With no h1 to anchor on, fall back to refusing an implausibly large trim.
+  const full = wordCount(visibleText(source));
+  if (full > 0 && wordCount(visibleText(stripped)) < full * 0.15) return source;
+  return stripped;
+}
