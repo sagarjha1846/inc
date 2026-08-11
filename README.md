@@ -91,6 +91,10 @@ npx citable example.com --site --limit 30
 # A Markdown report you can hand to a client
 npx citable example.com --site --markdown --out audit.md
 
+# A white-labelled HTML report (prints and saves to PDF cleanly)
+npx citable client.com --html --out audit.html \
+  --brand "Acme Digital" --prepared-for "Client Co" --accent "#7c3aed"
+
 # Your dev server, before you ship
 npx citable http://localhost:3000 --allow-private
 
@@ -140,6 +144,7 @@ Zero dependencies. Runs on Node 20+, Cloudflare Workers, Deno and Bun — nothin
 | Generated `llms.txt` | — | ✅ |
 | Generated JSON-LD and FAQPage schema | — | ✅ |
 | Whole-site crawl and Markdown reports | — | ✅ |
+| White-labelled HTML client reports | — | ✅ |
 | CI gating | — | ✅ |
 
 The generators are the point of Pro: they emit the actual files, filled in with what
@@ -167,7 +172,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, and
 ## Development
 
 ```bash
-node --test "test/*.test.js"   # 59 tests, no install step
+node --test "test/*.test.js"   # 67 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```

@@ -7,7 +7,7 @@
  */
 
 import { auditUrl } from '../core/audit.js';
-import { renderMarkdown } from '../core/report.js';
+import { renderHtml, renderMarkdown } from '../core/report.js';
 import { tierFor } from '../core/license.js';
 import { AI_CRAWLERS } from '../core/robots.js';
 import { FetchError } from '../core/fetch.js';
@@ -169,6 +169,11 @@ async function handleAudit(request, env, url) {
     if (format === 'markdown') {
       return new Response(renderMarkdown(result), {
         headers: { 'content-type': 'text/markdown; charset=utf-8', ...corsHeaders() },
+      });
+    }
+    if (format === 'html') {
+      return new Response(renderHtml(result), {
+        headers: { 'content-type': 'text/html; charset=utf-8', ...corsHeaders() },
       });
     }
     return json(result, 200, { 'x-ratelimit-remaining': String(limit.remaining) });

@@ -10,7 +10,7 @@
 import process from 'node:process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { auditSite, auditUrl, urlsFromSitemap } from '../src/core/audit.js';
-import { renderMarkdown, renderSiteMarkdown, renderTerminal } from '../src/core/report.js';
+import { renderHtml, renderMarkdown, renderSiteMarkdown, renderTerminal } from '../src/core/report.js';
 import { tierFor } from '../src/core/license.js';
 
 const VERSION = '0.1.0';
@@ -28,9 +28,19 @@ OPTIONS
   --key <key>         Pro license key. Also read from CITABLE_KEY.
   --json              Output raw JSON.
   --markdown          Output a Markdown report.
+  --html              Output a self-contained HTML report (client deliverable;
+                      prints and saves to PDF cleanly).
   --out <file>        Write the primary output to a file instead of stdout.
-  --report <file>     Also write a Markdown report to this file, whatever the
-                      primary output format is (one audit, two artifacts).
+  --report <file>     Also write a report to this file, whatever the primary
+                      output format is (one audit, two artifacts). The format
+                      follows the extension: .html gives HTML, anything else
+                      gives Markdown.
+
+REPORT BRANDING (for HTML reports you hand to a client)
+  --brand <name>      Replaces "Citable" in the report header.
+  --accent <color>    Accent colour, any CSS colour (default #0d9488).
+  --prepared-for <s>  Client name, shown under the page URL.
+  --prepared-by <s>   Your name or agency, shown under the page URL.
   --min-score <n>     Exit non-zero if the score is below n (for CI).
   --fail-on <sev>     Exit non-zero on any finding at or above this severity
                       (critical|high|medium|low).
@@ -48,6 +58,10 @@ EXAMPLES
   citable example.com --site --limit 30 --markdown --out audit.md
   citable example.com --min-score 80          # fails the build below 80
 
+  # A branded HTML report to hand a client
+  citable client.com --html --out audit.html \\
+    --brand "Acme Digital" --prepared-for "Client Co" --accent "#7c3aed"
+
 PRO
   A Pro key unlocks every finding plus generated robots.txt, llms.txt, JSON-LD
   and FAQPage schema for each page. Set CITABLE_KEY or pass --key.
@@ -63,8 +77,13 @@ function parseArgs(argv) {
     key: process.env.CITABLE_KEY || null,
     json: false,
     markdown: false,
+    html: false,
     out: null,
     report: null,
+    brand: 'Citable',
+    accent: '#0d9488',
+    preparedFor: null,
+    preparedBy: null,
     minScore: null,
     failOn: null,
     verbose: false,
@@ -107,6 +126,21 @@ function parseArgs(argv) {
       case '--markdown':
       case '--md':
         options.markdown = true;
+        break;
+      case '--html':
+        options.html = true;
+        break;
+      case '--brand':
+        options.brand = next();
+        break;
+      case '--accent':
+        options.accent = next();
+        break;
+      case '--prepared-for':
+        options.preparedFor = next();
+        break;
+      case '--prepared-by':
+        options.preparedBy = next();
         break;
       case '--out':
         options.out = next();
@@ -196,6 +230,7 @@ async function main() {
 
   let output;
   let markdown;
+  let html = null;
   let worstScore;
   let findings = [];
 
@@ -212,18 +247,28 @@ async function main() {
       });
       worstScore = rollup.averageScore;
       findings = rollup.pages.flatMap((page) => page.issues || []);
-      markdown = renderSiteMarkdown(rollup);
+      markdown = renderSiteMarkdown(rollup, { brand: options.brand });
+      // Site mode has no single-page HTML report; the rollup is Markdown.
       output = options.json ? JSON.stringify(rollup, null, 2) : markdown;
     } else {
       const result = await auditUrl(options.url, audit);
       worstScore = result.score;
       findings = result.issues;
-      markdown = renderMarkdown(result);
+      const branding = {
+        brand: options.brand,
+        accent: options.accent,
+        preparedFor: options.preparedFor,
+        preparedBy: options.preparedBy,
+      };
+      markdown = renderMarkdown(result, branding);
+      html = renderHtml(result, branding);
       output = options.json
         ? JSON.stringify(result, null, 2)
-        : options.markdown
-          ? markdown
-          : renderTerminal(result, { color: options.color, verbose: options.verbose });
+        : options.html
+          ? html
+          : options.markdown
+            ? markdown
+            : renderTerminal(result, { color: options.color, verbose: options.verbose });
     }
   } catch (error) {
     process.stderr.write(`citable: ${(error && error.message) || error}\n`);
@@ -238,9 +283,16 @@ async function main() {
   }
 
   // A second artifact from the same audit — no extra requests to the target.
+  // The extension picks the format, so `--report audit.html` does what it looks
+  // like it does.
   if (options.report && options.report !== options.out) {
-    await writeFile(options.report, markdown, 'utf8');
-    process.stderr.write(`citable: wrote ${options.report}\n`);
+    const wantsHtml = /\.html?$/i.test(options.report);
+    if (wantsHtml && !html) {
+      process.stderr.write('citable: HTML reports are per-page; use --report <file>.md in --site mode\n');
+    } else {
+      await writeFile(options.report, wantsHtml ? html : markdown, 'utf8');
+      process.stderr.write(`citable: wrote ${options.report}\n`);
+    }
   }
 
   // CI gates.

@@ -45,9 +45,18 @@ the sticky feature — that *is* a recurring-value shape.
 
 ### 2. Done-for-you audits — $300–800
 
-The Markdown report is already a client deliverable. Agencies charge four figures for
-this work manually; the tool does the analysis in seconds, and what you sell is the
-interpretation, prioritisation and the fixes applied.
+The HTML report is already a client deliverable — white-labelled with your own brand,
+accent colour and a prepared-for line, self-contained in one file, and it prints or
+saves to PDF cleanly:
+
+```bash
+citable client.com --html --out audit.html \
+  --brand "Your Agency" --prepared-for "Client Co" --accent "#7c3aed"
+```
+
+Agencies charge four figures for this work manually; the tool does the analysis in
+seconds, and what you sell is the interpretation, prioritisation and the fixes
+applied.
 
 Realistically this is the highest revenue per hour early on, because you can do it
 before anyone has heard of the product. Every engagement also generates the case-study
