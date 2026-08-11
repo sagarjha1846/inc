@@ -181,6 +181,40 @@ export function parseRobots(text) {
 }
 
 /**
+ * Put a pattern or a path into the one form both sides can be compared in.
+ *
+ * RFC 9309 §2.2.2 requires comparison on percent-encoded octets, but the two
+ * sides usually arrive differently encoded: `new URL()` percent-encodes a
+ * pathname, while a CMS commonly writes `Disallow: /über` as literal UTF-8. Left
+ * alone, those never match, and the audit reports "allowed" for a page the site
+ * actually blocks — the dangerous direction, since it tells someone they are
+ * visible when they are not.
+ *
+ * Only non-ASCII octets are encoded here. Existing `%XX` escapes are left
+ * as-is apart from upper-casing their hex digits, because a percent-encoded
+ * reserved character is genuinely distinct from the character itself:
+ * decoding `%2F` into `/` would silently turn one path segment into two.
+ */
+function canonicalPath(value) {
+  let out = '';
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i];
+    if (char === '%' && /^[0-9a-fA-F]{2}$/.test(value.slice(i + 1, i + 3))) {
+      out += `%${value.slice(i + 1, i + 3).toUpperCase()}`;
+      i += 2;
+    } else if (char.charCodeAt(0) > 127) {
+      // encodeURIComponent handles surrogate pairs; take the whole code point.
+      const codePoint = String.fromCodePoint(value.codePointAt(i));
+      out += encodeURIComponent(codePoint);
+      i += codePoint.length - 1;
+    } else {
+      out += char;
+    }
+  }
+  return out;
+}
+
+/**
  * Does a robots.txt path pattern (with `*` and `$`) match this path?
  *
  * A pattern always anchors at the start of the path. Without a trailing `$` it
@@ -195,8 +229,11 @@ export function parseRobots(text) {
  * pattern like `/*a*a*a*a*$` would otherwise be a denial-of-service vector
  * against the hosted worker.
  */
-function pathMatches(pattern, path) {
-  if (pattern === '') return false;
+function pathMatches(rawPattern, rawPath) {
+  if (rawPattern === '') return false;
+
+  const pattern = canonicalPath(rawPattern);
+  const path = canonicalPath(rawPath);
 
   const anchored = pattern.endsWith('$');
   const body = anchored ? pattern.slice(0, -1) : pattern;

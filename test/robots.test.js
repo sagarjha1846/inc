@@ -166,3 +166,55 @@ test('every registered crawler carries the fields the report needs', () => {
     assert.ok(crawler.weight > 0, `${crawler.token} needs a positive weight`);
   }
 });
+
+test('percent-encoding differences do not hide a block', () => {
+  // The two sides routinely arrive encoded differently: `new URL()` encodes a
+  // pathname, while a CMS writes literal UTF-8 into robots.txt. If these fail
+  // to match, the audit says "allowed" for a page the site actually blocks —
+  // the direction that tells someone they are visible when they are not.
+  const literal = parseRobots('User-agent: *\nDisallow: /\u00fcber\n');
+  assert.equal(isAllowed(literal, 'Bot', '/%C3%BCber').allowed, false, 'encoded path vs literal pattern');
+  assert.equal(isAllowed(literal, 'Bot', '/\u00fcber').allowed, false, 'literal path vs literal pattern');
+
+  const encoded = parseRobots('User-agent: *\nDisallow: /%C3%BCber\n');
+  assert.equal(isAllowed(encoded, 'Bot', '/\u00fcber').allowed, false, 'literal path vs encoded pattern');
+  assert.equal(isAllowed(encoded, 'Bot', '/%c3%bcber').allowed, false, 'hex case is normalised');
+
+  // An unrelated non-ASCII path must still be allowed.
+  assert.equal(isAllowed(literal, 'Bot', '/andere').allowed, true);
+});
+
+test('a percent-encoded reserved character stays distinct from the character', () => {
+  // Decoding %2F into "/" would turn one path segment into two and silently
+  // widen the rule, so the escape must be preserved rather than resolved.
+  const parsed = parseRobots('User-agent: *\nDisallow: /a%2Fb\n');
+  assert.equal(isAllowed(parsed, 'Bot', '/a%2Fb').allowed, false);
+  assert.equal(isAllowed(parsed, 'Bot', '/a/b').allowed, true, '/a/b is a different path from /a%2Fb');
+});
+
+test('wildcards backtrack instead of committing to the first match', () => {
+  // A left-to-right scan that takes the first "b" reports this as allowed.
+  const parsed = parseRobots('User-agent: *\nDisallow: /a*b$\n');
+  assert.equal(isAllowed(parsed, 'Bot', '/abxb').allowed, false, 'the * must give up "b" and take "bx"');
+  assert.equal(isAllowed(parsed, 'Bot', '/axxb').allowed, false);
+  assert.equal(isAllowed(parsed, 'Bot', '/axxc').allowed, true);
+
+  const ext = parseRobots('User-agent: *\nDisallow: /*.pdf$\n');
+  assert.equal(isAllowed(ext, 'Bot', '/a.pdf.pdf').allowed, false, 'the final .pdf is at the end');
+});
+
+test('a trailing wildcard before $ still matches to the end', () => {
+  const parsed = parseRobots('User-agent: *\nDisallow: /*$\n');
+  for (const path of ['/', '/foo', '/deep/path/here']) {
+    assert.equal(isAllowed(parsed, 'Bot', path).allowed, false, `${path} should be blocked`);
+  }
+});
+
+test('a pathological pattern cannot hang the matcher', () => {
+  // robots.txt comes from an arbitrary site, so a pattern that a naive regex
+  // translation would blow up on must stay cheap.
+  const parsed = parseRobots(`User-agent: *\nDisallow: /${'a*'.repeat(24)}b$\n`);
+  const started = Date.now();
+  assert.equal(isAllowed(parsed, 'Bot', `/${'a'.repeat(600)}`).allowed, true);
+  assert.ok(Date.now() - started < 1000, 'matching should not blow up on adversarial input');
+});
