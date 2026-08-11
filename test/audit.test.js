@@ -229,3 +229,40 @@ test('private and malformed hosts are refused before any request', async () => {
   await assert.rejects(() => auditUrl('ftp://example.com/'), /Unsupported protocol/);
   await assert.rejects(() => auditUrl('http://192.168.1.1/'), /private or loopback/);
 });
+
+test('the free tier never hides the most severe finding', async () => {
+  // The CLI's --fail-on gate tests "any issue at or above severity S" against
+  // result.issues, which the free tier truncates. That is only safe because
+  // findings are ranked severity-first, so the worst issue is always rank one
+  // and always visible: a hidden issue can never trip a threshold that a shown
+  // one does not.
+  //
+  // Nothing states that dependency, and it is easy to break — ranking by points
+  // recoverable instead would let a CI gate report green while the problem it
+  // was added to catch sits below the cut. Pinned here so that change fails a
+  // test rather than a user's deploy.
+  const routes = {
+    'https://mixed.test/': { body: SPA_PAGE },
+    'https://mixed.test/robots.txt': {
+      body: 'User-agent: PerplexityBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n',
+      headers: { 'content-type': 'text/plain' },
+    },
+  };
+
+  const free = await auditUrl('https://mixed.test/', { fetchOptions: { fetchImpl: stubFetch(routes) } });
+  const pro = await auditUrl('https://mixed.test/', { tier: 'pro', fetchOptions: { fetchImpl: stubFetch(routes) } });
+
+  assert.ok(pro.issues.length > free.issues.length, 'the fixture needs more issues than the free limit');
+
+  const rank = { critical: 0, high: 1, medium: 2, low: 3 };
+  const worstOverall = Math.min(...pro.issues.map((issue) => rank[issue.severity]));
+  const worstShown = Math.min(...free.issues.map((issue) => rank[issue.severity]));
+  assert.equal(worstShown, worstOverall, 'the free tier must show the worst severity present');
+
+  // The same property, stated the way the gate uses it.
+  for (const threshold of ['critical', 'high', 'medium', 'low']) {
+    const anyOverall = pro.issues.some((issue) => rank[issue.severity] <= rank[threshold]);
+    const anyShown = free.issues.some((issue) => rank[issue.severity] <= rank[threshold]);
+    assert.equal(anyShown, anyOverall, `--fail-on ${threshold} must see what the full audit sees`);
+  }
+});
