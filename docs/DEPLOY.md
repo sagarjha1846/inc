@@ -37,8 +37,17 @@ Verify:
 
 ```bash
 curl https://citable.<you>.workers.dev/api/health
+{ "ok": true, "service": "citable", "crawlersTracked": 14,
+  "licensingConfigured": true, "checkoutConfigured": true }
+
 curl "https://citable.<you>.workers.dev/api/audit?url=example.com" | head -40
 ```
+
+Check both configuration flags. Neither omission fails loudly on its own: without
+`LICENSE_SECRET` every Pro key is rejected and buyers quietly get the free tier, and
+without a real `CHECKOUT_URL` there is nothing to buy. If checkout is unset, the site
+renders "Checkout not configured" in place of the buy buttons rather than linking
+visitors to a dead page — visible to you, and not a broken promise to them.
 
 ### Running it locally first
 

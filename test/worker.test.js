@@ -263,3 +263,41 @@ test('/api/license accepts a bearer token as well as a query parameter', async (
   ).json();
   assert.equal(data.valid, true);
 });
+
+/* ------------------------------------------------ deploy misconfiguration */
+
+test('an unconfigured checkout does not render a dead buy button', async () => {
+  // wrangler.toml ships CHECKOUT_URL as a placeholder. A deploy that never
+  // edits it would otherwise show live buy buttons pointing at a 404, and
+  // nothing about that fails loudly.
+  const placeholder = { ...env, CHECKOUT_URL: 'https://gumroad.com/l/CHANGE-ME' };
+  const html = await (await worker.fetch(new Request('https://citable.test/'), placeholder)).text();
+
+  assert.doesNotMatch(html, /href="https:\/\/gumroad\.com\/l\/CHANGE-ME"/);
+  assert.match(html, /Checkout not configured/);
+
+  // And with no CHECKOUT_URL at all.
+  const bare = await (await worker.fetch(new Request('https://citable.test/'), { LICENSE_SECRET: SECRET })).text();
+  assert.match(bare, /Checkout not configured/);
+});
+
+test('a configured checkout renders real buy buttons', async () => {
+  const html = await (await worker.fetch(new Request('https://citable.test/'), env)).text();
+  assert.match(html, /href="https:\/\/checkout\.example\/buy"/);
+  assert.doesNotMatch(html, /Checkout not configured/);
+});
+
+test('/api/health reports whether the deploy is actually sellable', async () => {
+  const healthy = await (await worker.fetch(new Request('https://citable.test/api/health'), env)).json();
+  assert.equal(healthy.licensingConfigured, true);
+  assert.equal(healthy.checkoutConfigured, true);
+
+  // Neither omission fails loudly on its own: with no secret every Pro key is
+  // rejected, and with no checkout there is nothing to buy.
+  const broken = await (
+    await worker.fetch(new Request('https://citable.test/api/health'), { CHECKOUT_URL: 'https://x/CHANGE-ME' })
+  ).json();
+  assert.equal(broken.ok, true, 'the service still serves free audits');
+  assert.equal(broken.licensingConfigured, false);
+  assert.equal(broken.checkoutConfigured, false);
+});

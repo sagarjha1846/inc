@@ -87,7 +87,16 @@ export default {
         );
 
       case '/api/health':
-        return json({ ok: true, service: 'citable', crawlersTracked: AI_CRAWLERS.length });
+        return json({
+          ok: true,
+          service: 'citable',
+          crawlersTracked: AI_CRAWLERS.length,
+          // Both are easy to forget on a first deploy and neither fails loudly
+          // on its own: without a secret every Pro key is rejected, and without
+          // a checkout link there is no way to buy one.
+          licensingConfigured: Boolean(env.LICENSE_SECRET),
+          checkoutConfigured: Boolean(env.CHECKOUT_URL) && !/CHANGE-ME/i.test(env.CHECKOUT_URL || ''),
+        });
 
       case '/api/crawlers':
         return json({ crawlers: AI_CRAWLERS });

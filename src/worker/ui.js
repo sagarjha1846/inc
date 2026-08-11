@@ -18,6 +18,15 @@ import { AI_CRAWLERS } from '../core/robots.js';
  *   being asked to pay for — before they type anything.
  */
 export function renderApp({ priceUrl = '#pricing', crawlerCount = AI_CRAWLERS.length, demoResult = null } = {}) {
+  // A deploy that never set CHECKOUT_URL would otherwise render live buy
+  // buttons pointing at the placeholder link, so a visitor clicking "Get a Pro
+  // key" lands on a 404 and the operator has no reason to notice. Failing
+  // visibly is better than a broken promise.
+  const checkoutReady = Boolean(priceUrl) && priceUrl !== '#pricing' && !/CHANGE-ME/i.test(priceUrl);
+  const buyButton = (label) =>
+    checkoutReady
+      ? `<a class="cta" href="${priceUrl}">${label}</a>`
+      : `<span class="cta cta-disabled" role="note">Checkout not configured</span>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -102,6 +111,7 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;pa
 .lock strong{color:var(--text)}
 .cta{display:inline-block;background:var(--accent);color:#04120f;padding:12px 22px;border-radius:var(--radius);
   text-decoration:none;font-weight:650}
+.cta-disabled{background:var(--panel-2);color:var(--muted);border:1px dashed var(--line);cursor:not-allowed}
 .err{border-color:var(--red);color:var(--red)}
 .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
 .tab{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);padding:6px 13px;border-radius:9px;
@@ -168,7 +178,7 @@ footer{color:var(--muted);font-size:13px;padding:40px 0 60px;border-top:1px soli
           <li>Whole-site crawls and Markdown reports</li>
           <li>CI gate: fail builds when the score drops</li>
         </ul>
-        <a class="cta" href="${priceUrl}">Get a Pro key</a>
+        ${buyButton('Get a Pro key')}
       </div>
     </div>
   </section>
@@ -273,7 +283,7 @@ function renderResult(result){
     <div class="lock">
       <p><strong>\${result.issuesWithheld} more finding\${result.issuesWithheld===1?'':'s'} found on this page.</strong><br>
       Pro unlocks all \${result.issuesTotal}, plus a generated robots.txt patch, llms.txt, JSON-LD and FAQ schema built from this page.</p>
-      <a class="cta" href="${priceUrl}">Unlock the full report — $49</a>
+      ${buyButton('Unlock the full report — $49')}
     </div>\` : '';
 
   out.innerHTML = \`

@@ -97,3 +97,27 @@ test('the README example output is shaped like real CLI output', () => {
     assert.ok(example.includes(category.label), `example is missing the ${category.label} row`);
   }
 });
+
+/* ------------------------------------------------------- version coherence */
+
+test('every version string agrees with package.json', () => {
+  // The version lives in three places. Nothing keeps them together, and a
+  // mismatch is invisible until someone reports a bug against a version that
+  // does not correspond to the code they ran.
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const cli = readFileSync(new URL('../bin/citable.js', import.meta.url), 'utf8');
+  const fetchSource = readFileSync(new URL('../src/core/fetch.js', import.meta.url), 'utf8');
+
+  const cliVersion = cli.match(/const VERSION = '([^']+)'/);
+  assert.ok(cliVersion, 'bin/citable.js should declare VERSION');
+  assert.equal(cliVersion[1], pkg.version, 'CLI --version does not match package.json');
+
+  // The crawler identifies itself to every site it audits, so a stale version
+  // there misreports which build is making the request.
+  const agentVersion = fetchSource.match(/CitableBot\/([0-9.]+)/);
+  assert.ok(agentVersion, 'the user agent should carry a version');
+  assert.ok(
+    pkg.version.startsWith(agentVersion[1]),
+    `user agent says ${agentVersion[1]} but the package is ${pkg.version}`,
+  );
+});
