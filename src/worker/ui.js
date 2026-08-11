@@ -319,10 +319,13 @@ function renderResult(result){
   out.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
-form.addEventListener('submit', async (event) => {
+// The static build (GitHub Pages) serves this page without the audit form,
+// since a browser cannot fetch another origin to audit it. Everything below
+// is guarded so the same script drives both the hosted app and that build.
+if (form) form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const url = document.getElementById('url').value.trim();
-  const key = document.getElementById('key').value.trim();
+  const key = keyField ? keyField.value.trim() : '';
   if (!url) return;
 
   go.disabled = true;
@@ -350,8 +353,9 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
+const keyField = document.getElementById('key');
 const savedKey = localStorage.getItem('citable_key');
-if (savedKey) document.getElementById('key').value = savedKey;
+if (savedKey && keyField) keyField.value = savedKey;
 
 // A baked-in sample report, when this page was served as the demo.
 if (window.__CITABLE_DEMO__) {
