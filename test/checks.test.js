@@ -468,3 +468,48 @@ test('a page that is entirely inside <nav> is not trimmed to nothing', () => {
   const { findings } = check(page(odd));
   assert.notEqual(find(findings, 'content-depth').title, '0 words of readable content');
 });
+
+/* ----------------------------------------------- canonical URL relations */
+
+/** Run the canonical check for a page at `url` declaring `canonical`. */
+function canonical(canonicalHref, url = 'https://acme.com/page') {
+  const html = `<!doctype html><html lang="en"><head><title>A page about things</title><link rel="canonical" href="${canonicalHref}"></head><body><main>${BODY}</main></body></html>`;
+  const { findings } = runChecks({
+    url,
+    page: {
+      body: html, status: 200, ok: true, headers: { 'content-type': 'text/html; charset=utf-8' },
+      elapsedMs: 5, bytes: html.length, redirects: [], truncated: false, finalUrl: url,
+    },
+  });
+  return find(findings, 'canonical');
+}
+
+test('spellings of the same URL are not reported as a different page', () => {
+  // Pointing the apex at the www host, or http at https, is what canonical
+  // consolidation is *for*. Calling it "this page defers its citations
+  // elsewhere" warns the reader about something they did correctly.
+  for (const [label, href] of [
+    ['identical', 'https://acme.com/page'],
+    ['trailing slash', 'https://acme.com/page/'],
+    ['www vs apex', 'https://www.acme.com/page'],
+    ['http vs https', 'http://acme.com/page'],
+    ['uppercase host', 'https://ACME.com/page'],
+    ['default port', 'https://acme.com:443/page'],
+  ]) {
+    const finding = canonical(href);
+    assert.equal(finding.severity, 'pass', label);
+    assert.doesNotMatch(finding.detail, /different page/, `${label} should not read as a different page`);
+  }
+});
+
+test('a canonical on a genuinely different page still says so', () => {
+  for (const href of ['https://acme.com/other', 'https://other.com/page', 'https://acme.com/page?variant=b']) {
+    assert.match(canonical(href).detail, /different page/, href);
+  }
+});
+
+test('a variant canonical explains itself rather than just passing', () => {
+  const finding = canonical('https://www.acme.com/page');
+  assert.match(finding.detail, /consolidates/);
+  assert.match(finding.detail, /expected setup/);
+});

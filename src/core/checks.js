@@ -871,10 +871,13 @@ function checkMetadata(ctx) {
     try {
       const canonical = new URL(canonicals[0], url);
       canonicalOk = true;
+      const relation = canonicalRelation(canonical, new URL(url));
       canonicalNote =
-        canonical.toString().replace(/\/$/, '') === new URL(url).toString().replace(/\/$/, '')
+        relation === 'self'
           ? `Self-referencing canonical: ${canonical}`
-          : `Canonical points elsewhere: ${canonical} — this page defers its citations to that URL.`;
+          : relation === 'variant'
+            ? `Canonical consolidates this URL's variants onto ${canonical}. That is the expected setup — the audited URL differs only by scheme, www or trailing slash.`
+            : `Canonical points to a different page: ${canonical} — this URL defers its citations to that one.`;
     } catch {
       canonicalNote = `Canonical is not a valid URL: ${canonicals[0]}`;
     }
@@ -961,6 +964,30 @@ function safeHostname(value) {
   } catch {
     return '';
   }
+}
+
+/**
+ * How a canonical URL relates to the URL that was audited.
+ *
+ * Comparing the two as strings makes normal configuration look like a fault:
+ * a canonical pointing from the apex to the www host, or from http to https,
+ * is exactly what consolidation is for, and reporting it as "this page defers
+ * its citations elsewhere" reads as a warning about something done right.
+ * Those spellings address the same resource, so they are reported as such.
+ */
+function canonicalRelation(canonical, audited) {
+  const shape = (url) => ({
+    host: url.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, ''),
+    path: url.pathname.replace(/\/+$/, '') || '/',
+    query: url.search,
+  });
+  const a = shape(canonical);
+  const b = shape(audited);
+
+  if (a.host !== b.host || a.path !== b.path || a.query !== b.query) return 'elsewhere';
+  // Same resource. Identical spelling is "self"; anything else is a variant
+  // being folded onto the canonical spelling, which is the point of the tag.
+  return canonical.toString().replace(/\/$/, '') === audited.toString().replace(/\/$/, '') ? 'self' : 'variant';
 }
 
 /** The registrable domain, so `www.a.com`, `blog.a.com` and `a.com` are one site. */
