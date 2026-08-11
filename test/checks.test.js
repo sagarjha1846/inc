@@ -237,3 +237,58 @@ test('a page that passes everything scores near the top', () => {
   assert.ok(scored.score >= 80, `expected a strong score, got ${scored.score}`);
   assert.equal(scored.counts.critical, 0);
 });
+
+/* ------------------------------- client-rendering vs merely short content */
+
+// An ordinary analytics snippet. Large enough to dominate a short page's bytes,
+// which is exactly the situation that used to be misread as client rendering.
+const ANALYTICS = `<script>${'window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}'.repeat(30)}</script>`;
+
+test('an empty mount element is reported as client-rendered', () => {
+  const { findings } = check(`<html><head><title>App</title></head><body><div id="root"></div><script>${'var a=1;'.repeat(800)}</script></body></html>`);
+  const finding = find(findings, 'js-rendered');
+  assert.equal(finding.severity, 'critical');
+  assert.match(finding.title, /rendered by JavaScript/);
+});
+
+test('a shell with no recognisable mount id is still reported', () => {
+  // The mount-element pattern only knows the common framework ids, so the
+  // absence of any prose markup has to carry the verdict on its own.
+  const { findings } = check(`<html><head><title>App</title></head><body><div class="application-container"></div><script>${'var a=1;'.repeat(800)}</script></body></html>`);
+  assert.equal(find(findings, 'js-rendered').severity, 'critical');
+});
+
+test('a short but server-rendered page is thin, not client-rendered', () => {
+  // The page is fully present in the HTML; it is simply short. Diagnosing this
+  // as client rendering sends the reader to re-architect a site that is fine,
+  // and the suggested fix — server-render it — is already done.
+  const { findings } = check(`<!doctype html><html lang="en"><head><title>Contact us</title></head><body>
+    <h1>Contact</h1>
+    <p>Call us on 0800 000 000, or email hello@example.com. We are open Monday to Friday.</p>
+    <p>We reply to everything within one working day.</p>${ANALYTICS}</body></html>`);
+
+  const finding = find(findings, 'js-rendered');
+  assert.notEqual(finding.severity, 'critical');
+  assert.match(finding.title, /[Tt]hin/);
+  assert.doesNotMatch(finding.fix, /pre-render|Server-render/);
+});
+
+test('a form-driven page counts as server-rendered content', () => {
+  const { findings } = check(`<!doctype html><html lang="en"><head><title>Sign in</title></head><body>
+    <h1>Sign in</h1><form><label>Email</label><input><button>Sign in</button></form>
+    <p>Forgotten your password? We will email you a reset link.</p>${ANALYTICS}</body></html>`);
+  assert.notEqual(find(findings, 'js-rendered').severity, 'critical');
+});
+
+test('script share is reported as evidence but does not decide the verdict', () => {
+  // Two pages with near-identical script ratios and different verdicts: the
+  // ratio describes the page, the missing markup diagnoses it.
+  const shell = check(`<html><body><div id="root"></div>${ANALYTICS}</body></html>`).findings;
+  const short = check(`<html><body><h1>Hi</h1><p>A short but genuine page of server-rendered copy.</p>${ANALYTICS}</body></html>`).findings;
+
+  assert.equal(find(shell, 'js-rendered').severity, 'critical');
+  assert.notEqual(find(short, 'js-rendered').severity, 'critical');
+  for (const findings of [shell, short]) {
+    assert.match(find(findings, 'js-rendered').evidence, /% (of the document is <script>|script)/);
+  }
+});

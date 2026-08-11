@@ -397,7 +397,7 @@ export const SAMPLE_RESULT = {
       "category": "access",
       "severity": "pass",
       "title": "Page responds 200",
-      "detail": "Served in 25ms.",
+      "detail": "Served in 19ms.",
       "evidence": "HTTP 200",
       "impact": null,
       "fix": null,

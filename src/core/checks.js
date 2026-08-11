@@ -346,7 +346,21 @@ function checkContent(ctx) {
   const mountShell = /<div[^>]+id=["'](root|app|__next|__nuxt|svelte)["'][^>]*>\s*<\/div>/i.test(html);
   ctx.scriptRatio = scriptRatio;
 
-  if (words < 120 && (mountShell || scriptRatio > 0.5)) {
+  // A high script ratio is *not* evidence of client rendering. It only says
+  // there is little text relative to script bytes, which is equally true of a
+  // short but perfectly server-rendered page carrying an ordinary analytics
+  // snippet — and calling that "rendered by JavaScript" sends someone to
+  // re-architect a site that has no such problem.
+  //
+  // What distinguishes a shell is that the content-bearing markup is *absent*:
+  // an empty mount element, or a body with no prose elements at all. A short
+  // page that has headings, paragraphs or list items was server-rendered; it is
+  // thin, which is a different finding with a different fix.
+  const proseElements =
+    countTag(html, 'p') + countTag(html, 'li') + countTag(html, 'td') + extractHeadings(html).length;
+  const looksLikeShell = mountShell || (proseElements === 0 && words < 25);
+
+  if (words < 120 && looksLikeShell) {
     out.push(
       finding({
         id: 'js-rendered',
