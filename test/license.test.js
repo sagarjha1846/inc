@@ -128,3 +128,33 @@ test('revocation is checked only after the signature, so forgeries stay forgerie
   assert.equal(result.valid, false);
   assert.equal(result.reason, 'bad_signature');
 });
+
+/* ------------------------------------------------------ key re-derivation */
+
+import { keyFromPayload } from '../src/core/license.js';
+
+test('a key can be re-derived from its ledger payload', async () => {
+  // The support case: a buyer lost their key. Re-deriving returns the key they
+  // were already sent, rather than minting a second live key for one purchase
+  // — two keys for one sale cannot later be revoked as a unit.
+  const { key, payload } = await issueKey({ email: 'alice@example.com', secret: SECRET, days: 365 });
+
+  const rederived = await keyFromPayload(payload, SECRET);
+  assert.equal(rederived, key, 're-derivation must be deterministic');
+  assert.equal((await verifyKey(rederived, SECRET)).valid, true);
+});
+
+test('re-derivation is bound to the signing secret', async () => {
+  const { payload } = await issueKey({ email: 'alice@example.com', secret: SECRET });
+  const wrong = await keyFromPayload(payload, 'a-different-secret-entirely-here');
+  assert.equal((await verifyKey(wrong, SECRET)).valid, false);
+});
+
+test('a re-derived key carries the original expiry, not a fresh one', async () => {
+  // Re-issuing with issueKey would silently extend the licence; re-deriving
+  // must not.
+  const { payload } = await issueKey({ email: 'alice@example.com', secret: SECRET, days: 1 });
+  const rederived = await keyFromPayload(payload, SECRET);
+  const verified = await verifyKey(rederived, SECRET);
+  assert.equal(verified.expiresAt, new Date(payload.x * 1000).toISOString());
+});

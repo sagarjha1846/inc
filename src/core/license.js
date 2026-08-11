@@ -80,10 +80,20 @@ export async function issueKey({ email, plan = 'pro', days = 365, seats = 1, sec
     x: days === 0 ? 0 : now + Math.round(days * 86400),
   };
 
+  return { key: await keyFromPayload(payload, secret), payload };
+}
+
+/**
+ * Re-derive the exact key for a payload already recorded in the ledger.
+ *
+ * Signing is deterministic, so a buyer who lost their key gets the same one
+ * back rather than a second live key for one purchase — which would otherwise
+ * accumulate keys that can never be revoked as a set.
+ */
+export async function keyFromPayload(payload, secret) {
   const body = toBase64Url(encoder.encode(JSON.stringify(payload)));
   const signature = await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(`${PREFIX}.${body}`));
-  const key = `${PREFIX}.${body}.${toBase64Url(new Uint8Array(signature).slice(0, 24))}`;
-  return { key, payload };
+  return `${PREFIX}.${body}.${toBase64Url(new Uint8Array(signature).slice(0, 24))}`;
 }
 
 /**

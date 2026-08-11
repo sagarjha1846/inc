@@ -9,7 +9,8 @@
  *
  *   CITABLE_LICENSE_SECRET=... node scripts/issue-key.mjs buyer@example.com
  *   CITABLE_LICENSE_SECRET=... node scripts/issue-key.mjs buyer@example.com --days 365
- *   CITABLE_LICENSE_SECRET=... node scripts/issue-key.mjs --verify CTB1....
+ *   CITABLE_LICENSE_SECRET=... node scripts/issue-key.mjs --verify CTB1...
+ *   CITABLE_LICENSE_SECRET=... node scripts/issue-key.mjs --find buyer@example.com
  *
  * The same secret must be set as the LICENSE_SECRET Worker secret, or keys
  * will not validate in the hosted app.
@@ -17,7 +18,7 @@
 
 import process from 'node:process';
 import { appendFile, readFile } from 'node:fs/promises';
-import { issueKey, verifyKey } from '../src/core/license.js';
+import { issueKey, keyFromPayload, verifyKey } from '../src/core/license.js';
 
 const LEDGER = new URL('../licenses.ndjson', import.meta.url);
 
@@ -26,6 +27,7 @@ function usage(message) {
   process.stderr.write(`Usage:
   issue-key <email> [--days N] [--plan pro] [--seats N]
   issue-key --verify <key>
+  issue-key --find <email>    re-derive the key already sold to this buyer
   issue-key --list
 
   --days 0   lifetime key (default; matches a one-time purchase)
@@ -50,6 +52,49 @@ async function main() {
     } catch {
       process.stdout.write('No keys issued yet.\n');
     }
+    return;
+  }
+
+  if (argv[0] === '--find') {
+    const needle = String(argv[1] || '').toLowerCase().trim();
+    if (!needle) usage('--find needs an email address');
+
+    let ledger;
+    try {
+      ledger = await readFile(LEDGER, 'utf8');
+    } catch {
+      process.stderr.write('issue-key: no licenses.ndjson yet — nothing has been issued.\n');
+      process.exit(1);
+    }
+
+    const matches = ledger
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry) => entry && String(entry.e || '').toLowerCase().includes(needle));
+
+    if (!matches.length) {
+      process.stderr.write(`issue-key: no key on record for ${needle}\n`);
+      process.exit(1);
+    }
+
+    for (const entry of matches) {
+      // Signing is deterministic, so this returns the key they were sent
+      // rather than minting a second one for the same purchase.
+      const { i, e, p, s: seats, x, issuedAt } = entry;
+      const key = await keyFromPayload({ v: entry.v, i, e, p, s: seats, t: entry.t, x }, secret);
+      const status = x === 0 ? 'lifetime' : x * 1000 < Date.now() ? `EXPIRED ${new Date(x * 1000).toISOString().slice(0, 10)}` : `expires ${new Date(x * 1000).toISOString().slice(0, 10)}`;
+      process.stdout.write(`\n${e}  ·  ${p}  ·  ${seats} seat(s)  ·  ${status}\n`);
+      process.stdout.write(`issued ${issuedAt || 'unknown'}  ·  id ${i}\n`);
+      process.stdout.write(`${key}\n`);
+    }
+    process.stdout.write('\n');
     return;
   }
 

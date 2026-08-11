@@ -133,6 +133,20 @@ reported in `licenseWarning`.
 Annual keys expire on their own, which limits the blast radius of a leak you never
 notice.
 
+### When a buyer loses their key
+
+Signing is deterministic, so the original key can be re-derived from the ledger rather
+than issuing a second one:
+
+```bash
+export CITABLE_LICENSE_SECRET="..."
+node scripts/issue-key.mjs --find buyer@example.com
+```
+
+It prints the plan, seat count, expiry and the exact key that was sold. Prefer this over
+issuing a replacement: two live keys for one purchase cannot later be revoked as a unit,
+and a fresh `issue-key` run would silently extend the licence.
+
 ### Letting buyers check their own key
 
 `GET /api/license?key=CTB1...` reports whether a key is valid, its plan, seat count and
