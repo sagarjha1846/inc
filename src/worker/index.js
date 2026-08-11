@@ -12,6 +12,7 @@ import { tierFor } from '../core/license.js';
 import { AI_CRAWLERS } from '../core/robots.js';
 import { FetchError } from '../core/fetch.js';
 import { renderApp } from './ui.js';
+import { SAMPLE_RESULT } from './sample.js';
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 
@@ -76,6 +77,14 @@ export default {
         return new Response(renderApp({ priceUrl: env.CHECKOUT_URL || '#pricing' }), {
           headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' },
         });
+
+      // A full sample report, so a visitor can see what Pro actually produces
+      // before deciding to run anything or pay for it.
+      case '/demo':
+        return new Response(
+          renderApp({ priceUrl: env.CHECKOUT_URL || '#pricing', demoResult: SAMPLE_RESULT }),
+          { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=3600' } },
+        );
 
       case '/api/health':
         return json({ ok: true, service: 'citable', crawlersTracked: AI_CRAWLERS.length });

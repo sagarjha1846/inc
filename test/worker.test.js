@@ -53,6 +53,23 @@ test('the rendered page leaves no un-interpolated placeholders in static markup'
   assert.match(html, /Citable checks \d+ AI crawlers/);
 });
 
+test('/demo serves a full sample report with no network call', async () => {
+  const response = await worker.fetch(new Request('https://citable.test/demo'), env);
+  assert.equal(response.status, 200);
+  const html = await response.text();
+
+  assert.match(html, /window\.__CITABLE_DEMO__/);
+  // The demo must show the paid output, since that is what it is selling.
+  assert.match(html, /robotsTxt/);
+  assert.match(html, /northwind\.example/);
+  // A fixture host leaking into the public demo would be embarrassing.
+  assert.doesNotMatch(html, /127\.0\.0\.1/);
+  // `</script>` inside the injected JSON would break out of the script block.
+  const injected = html.split('window.__CITABLE_DEMO__ = ')[1].split(';</script>')[0];
+  assert.doesNotMatch(injected, /<\/script/i);
+  assert.equal(typeof JSON.parse(injected).score, 'number');
+});
+
 test('the auditor’s own robots.txt allows every citation crawler', async () => {
   const response = await worker.fetch(new Request('https://citable.test/robots.txt'), env);
   const body = await response.text();

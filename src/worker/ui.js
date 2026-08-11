@@ -9,7 +9,15 @@
 
 import { AI_CRAWLERS } from '../core/robots.js';
 
-export function renderApp({ priceUrl = '#pricing', crawlerCount = AI_CRAWLERS.length } = {}) {
+/**
+ * @param {object} options
+ * @param {string} [options.priceUrl]   Where the buy button points.
+ * @param {number} [options.crawlerCount]
+ * @param {object} [options.demoResult] A pre-computed audit rendered on load.
+ *   Used by `/demo`, so a visitor sees a full report — the thing they are
+ *   being asked to pay for — before they type anything.
+ */
+export function renderApp({ priceUrl = '#pricing', crawlerCount = AI_CRAWLERS.length, demoResult = null } = {}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -185,6 +193,7 @@ footer{color:var(--muted);font-size:13px;padding:40px 0 60px;border-top:1px soli
 
 </div>
 
+${demoResult ? '<script>window.__CITABLE_DEMO__ = ' + JSON.stringify(demoResult).replace(/</g, '\\u003c') + ';</script>' : ''}
 <script>
 const CATEGORY_COLORS = { high:'var(--green)', mid:'var(--amber)', low:'var(--red)' };
 const out = document.getElementById('out');
@@ -333,6 +342,12 @@ form.addEventListener('submit', async (event) => {
 
 const savedKey = localStorage.getItem('citable_key');
 if (savedKey) document.getElementById('key').value = savedKey;
+
+// A baked-in sample report, when this page was served as the demo.
+if (window.__CITABLE_DEMO__) {
+  renderResult(window.__CITABLE_DEMO__);
+  window.scrollTo(0, 0);
+}
 </script>
 </body>
 </html>`;

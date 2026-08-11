@@ -1,0 +1,24 @@
+# One domain or URL per line. Blank lines and # comments are ignored.
+#
+#   node scripts/benchmark.mjs --list scripts/domains.example.txt --out study
+#
+# Pick a coherent cohort — "the top 100 SaaS marketing sites" or "every YC W26
+# company" makes a story; a random mix does not. Cohorts where the audience
+# recognises the names travel furthest.
+#
+# Be a good citizen: one request per site per run, default concurrency of 3,
+# and do not re-run it in a loop. The whole premise of the tool is respecting
+# what a site's robots.txt asks for.
+
+stripe.com
+vercel.com
+linear.app
+notion.com
+figma.com
+supabase.com
+railway.com
+render.com
+planetscale.com
+neon.com
+clerk.com
+resend.com

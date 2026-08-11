@@ -120,12 +120,26 @@ function checkAccess(ctx) {
     const earned = Math.round(10 * (1 - lostWeight / citationWeight));
 
     if (blockedCitation.length) {
+      // Severity follows what is actually lost, not a share of total weight.
+      // If a vendor's indexing crawler is blocked, the site is absent from
+      // that engine's answers entirely — losing one whole answer engine is a
+      // blocker regardless of how many other crawlers are still allowed.
+      const lostEngines = [
+        ...new Set(
+          blockedCitation
+            .filter((crawler) => crawler.purpose === 'citation' && crawler.weight >= 3)
+            .map((crawler) => crawler.surface),
+        ),
+      ];
+
       out.push(
         finding({
           id: 'ai-crawlers-blocked',
           category: 'access',
-          severity: lostWeight / citationWeight > 0.4 ? 'critical' : 'high',
-          title: `${blockedCitation.length} answer-engine crawler(s) blocked by robots.txt`,
+          severity: lostEngines.length ? 'critical' : 'high',
+          title: lostEngines.length
+            ? `Invisible to ${lostEngines.join(' and ')} — blocked by robots.txt`
+            : `${blockedCitation.length} answer-engine crawler(s) blocked by robots.txt`,
           detail:
             'These crawlers are the ones that fetch pages in order to answer live questions. While they are disallowed, this page cannot appear as a citation in the surfaces listed below, no matter how good the content is.',
           evidence: blockedCitation

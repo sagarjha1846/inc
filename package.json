@@ -20,11 +20,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test \"test/*.test.js\"",
     "audit": "node bin/citable.js",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "keygen": "node scripts/issue-key.mjs"
+    "keygen": "node scripts/issue-key.mjs",
+    "benchmark": "node scripts/benchmark.mjs"
   },
   "keywords": [
     "seo",
