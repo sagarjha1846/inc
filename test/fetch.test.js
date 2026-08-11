@@ -84,3 +84,51 @@ test('allowPrivate opts out, for auditing a local dev server', () => {
   assert.doesNotThrow(() => normalizeUrl('http://localhost:3000/', { allowPrivate: true }));
   assert.doesNotThrow(() => normalizeUrl('http://[::ffff:127.0.0.1]/', { allowPrivate: true }));
 });
+
+test('a trailing dot does not smuggle a loopback host past the guard', () => {
+  // "localhost." is the fully-qualified spelling of "localhost" and resolves
+  // identically, so an anchored ^localhost$ test alone lets it straight through
+  // to the hosted endpoint.
+  for (const host of ['localhost.', 'LOCALHOST.', 'foo.internal.', 'x.local.']) {
+    assert.equal(isPrivateHost(host), true, `${host} should be treated as private`);
+  }
+  assert.throws(() => normalizeUrl('http://localhost./'), /private or loopback/);
+});
+
+test('public hostnames that merely look private are still auditable', () => {
+  // These are ordinary public domains. A prefix test like /^10\./ matches them
+  // and makes the auditor refuse to look at a site that is perfectly fine.
+  for (const host of ['10.example.com', '127.0.0.1.example.com', '192.168.example.com', 'localhost.example.com']) {
+    assert.equal(isPrivateHost(host), false, `${host} is a public name and should be allowed`);
+  }
+  assert.doesNotThrow(() => normalizeUrl('https://10.example.com/'));
+});
+
+test('private IPv4 ranges are matched numerically, not by prefix', () => {
+  for (const host of [
+    '0.0.0.0',
+    '10.1.2.3',
+    '127.0.0.1',
+    '100.64.0.1', // carrier-grade NAT
+    '169.254.169.254', // cloud metadata
+    '172.16.0.1',
+    '172.31.255.255',
+    '192.168.1.1',
+    '224.0.0.1', // multicast
+  ]) {
+    assert.equal(isPrivateHost(host), true, `${host} should be private`);
+  }
+
+  // Neighbouring public addresses must not be caught by the same rules.
+  for (const host of ['11.0.0.1', '172.15.0.1', '172.32.0.1', '100.63.255.255', '169.253.0.1', '8.8.8.8']) {
+    assert.equal(isPrivateHost(host), false, `${host} is public`);
+  }
+});
+
+test('alternate IPv4 spellings are canonicalised before the check', () => {
+  // The URL parser rewrites these to dotted quads; the guard relies on that,
+  // so it is worth pinning the behaviour rather than assuming it.
+  for (const url of ['http://127.1/', 'http://0x7f000001/', 'http://2130706433/', 'http://0177.0.0.1/']) {
+    assert.throws(() => normalizeUrl(url), /private or loopback/, `${url} should be refused`);
+  }
+});

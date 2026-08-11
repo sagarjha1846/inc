@@ -11,21 +11,55 @@
 export const DEFAULT_USER_AGENT =
   'CitableBot/0.1 (+https://github.com/sagarjha1846/inc; AI visibility auditor)';
 
-const PRIVATE_HOST_PATTERNS = [
+/**
+ * Names that always mean "this machine" or "this network", however they
+ * resolve. A single trailing dot is stripped before matching: `localhost.` is
+ * a fully-qualified spelling of `localhost` that resolves identically, and
+ * matching on `^localhost$` alone lets it straight through.
+ */
+const PRIVATE_HOST_NAMES = [
   /^localhost$/i,
-  /^127\./,
-  /^10\./,
-  /^192\.168\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^169\.254\./,
-  /^0\./,
-  /^\[?::1\]?$/,
-  /^\[?::\]?$/,
-  /^\[?f[cd][0-9a-f]{2}:/i, // fc00::/7 unique local
-  /^\[?fe[89ab][0-9a-f]:/i, // fe80::/10 link local
+  /\.localhost$/i,
   /\.local$/i,
   /\.internal$/i,
+  /\.home\.arpa$/i,
 ];
+
+const IPV6_PRIVATE_PATTERNS = [
+  /^::1$/,
+  /^::$/,
+  /^f[cd][0-9a-f]{2}:/i, // fc00::/7 unique local
+  /^fe[89ab][0-9a-f]:/i, // fe80::/10 link local
+];
+
+/**
+ * Is this dotted-quad inside a range that never belongs to a public website?
+ *
+ * Checked numerically rather than by string prefix. A prefix test like `/^10\./`
+ * also matches the hostname `10.example.com`, which is an ordinary public
+ * domain, so the auditor would refuse to look at a site that is perfectly fine.
+ */
+function isPrivateIpv4(host) {
+  const parts = host.split('.');
+  if (parts.length !== 4) return false;
+
+  const octets = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : NaN));
+  if (octets.some((octet) => !Number.isInteger(octet) || octet > 255)) return false;
+
+  const [a, b] = octets;
+  return (
+    a === 0 || // "this network"
+    a === 10 || // RFC1918
+    a === 127 || // loopback
+    (a === 100 && b >= 64 && b <= 127) || // RFC6598 carrier-grade NAT
+    (a === 169 && b === 254) || // link local, incl. cloud metadata
+    (a === 172 && b >= 16 && b <= 31) || // RFC1918
+    (a === 192 && b === 0) || // IETF protocol assignments
+    (a === 192 && b === 168) || // RFC1918
+    (a === 198 && b >= 18 && b <= 19) || // benchmarking
+    a >= 224 // multicast and reserved
+  );
+}
 
 /** Expand an IPv6 address into its eight 16-bit groups, or null if malformed. */
 function expandIpv6(text) {
@@ -72,13 +106,42 @@ function embeddedIpv4(hostname) {
   return [(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff].join('.');
 }
 
-/** Is this hostname a private, loopback or link-local target? */
+/**
+ * Is this hostname a private, loopback or link-local target?
+ *
+ * IP literals and DNS names are judged by different rules, because the two
+ * cannot be told apart by pattern alone: the address range tests belong only to
+ * something that is actually an address.
+ *
+ * This is a URL-layer guard, not a resolution-layer one. A public name that
+ * resolves to a private address still gets through, which no amount of string
+ * inspection can prevent — stopping that needs the resolved IP, which the
+ * Workers runtime does not expose. The guard therefore raises the cost of
+ * pointing the hosted endpoint at internal services without claiming to make
+ * it impossible.
+ */
 export function isPrivateHost(hostname) {
-  const host = String(hostname || '');
-  if (PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(host))) return true;
+  // A single trailing dot is the fully-qualified spelling of the same name and
+  // resolves identically, so it must not survive into the comparison.
+  const host = String(hostname || '')
+    .replace(/\.$/, '')
+    .toLowerCase();
+  if (!host) return true;
 
-  const mapped = embeddedIpv4(host);
-  return mapped !== null && PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(mapped));
+  const inner = host.replace(/^\[/, '').replace(/\]$/, '');
+
+  if (inner.includes(':')) {
+    if (IPV6_PRIVATE_PATTERNS.some((pattern) => pattern.test(inner))) return true;
+    const mapped = embeddedIpv4(inner);
+    return mapped !== null && isPrivateIpv4(mapped);
+  }
+
+  // The WHATWG URL parser canonicalises hex, octal, decimal and short-form
+  // IPv4 literals to dotted quads before this is reached, so only the dotted
+  // form needs handling here.
+  if (/^\d/.test(inner) && isPrivateIpv4(inner)) return true;
+
+  return PRIVATE_HOST_NAMES.some((pattern) => pattern.test(inner));
 }
 
 export class FetchError extends Error {
