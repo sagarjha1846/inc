@@ -1,14 +1,16 @@
 name: Deploy site
 
-# Publishes the static shop window to GitHub Pages: the landing page, a full
-# sample report, and the install instructions. The live audit endpoint is not
-# part of it — auditing a URL needs a server-side fetch, which a static host
-# cannot do and a browser is blocked from doing by CORS. For the working web
-# UI, deploy the Worker (see docs/DEPLOY.md).
+# Publishes the static shop window: the landing page, a full sample report,
+# both paid report formats, and the install line. The live audit endpoint is
+# deliberately absent — auditing a URL needs a server-side fetch, which a
+# static host cannot do and a browser is blocked from doing by CORS. For the
+# working web UI, deploy the Worker (see docs/DEPLOY.md).
 #
-# `configure-pages` with enablement: true turns Pages on via the API, so this
-# needs no manual setting change. If the repository or plan does not permit it,
-# that step fails loudly rather than deploying something broken.
+# Publishing is a plain git push to the `gh-pages` branch rather than the Pages
+# deployment API. The API route needs a token that can *create* a Pages site,
+# which the default workflow token is not granted here, and it fails with
+# "Resource not accessible by integration". A branch push only needs
+# `contents: write`, and GitHub serves the branch once Pages is pointed at it.
 
 on:
   push:
@@ -22,17 +24,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# Never leave a half-published site: let a running deploy finish.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,25 +49,23 @@ jobs:
             test -f "site/$f" || { echo "missing site/$f"; exit 1; }
           done
           # A dead buy button or a leaked fixture host would both be visible to
-          # every visitor, so fail the deploy rather than publish them.
+          # every visitor, so fail rather than publish them.
           ! grep -q "CHANGE-ME" site/index.html || { echo "placeholder link in landing page"; exit 1; }
           ! grep -rq "127\.0\.0\.1" site/ || { echo "fixture host leaked into the site"; exit 1; }
           echo "site build verified"
 
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
+      - name: Publish to the gh-pages branch
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          # Build the commit from the site directory alone, with no history, so
+          # the published branch never accumulates weight or leaks source.
+          cd site
+          git init -q
+          git checkout -q -b gh-pages
+          git add -A
+          git commit -q -m "Publish site from ${GITHUB_SHA::7}"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
+          echo "published to gh-pages"
