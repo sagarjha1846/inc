@@ -30,6 +30,38 @@ const REPO = 'https://github.com/sagarjha1846/inc';
 // derived. Everything else on the page stays relative and works from any host.
 const SITE = 'https://sagarjha1846.github.io/inc';
 
+/**
+ * Where the buy buttons point.
+ *
+ * `CITABLE_CHECKOUT_URL` is read from the environment so that wiring up a real
+ * payment link is a repository variable rather than a code change.
+ *
+ * Until one exists there is nothing that can take money, and the two remaining
+ * options are a button that fails and a way to reach the seller. This build
+ * used to pass the README's feature table as `priceUrl`, which satisfied the
+ * "not a placeholder" test and rendered a live "Get a Pro key" button leading
+ * to a comparison chart — the exact broken promise that guard was written to
+ * prevent, defeated by pointing it at a real URL that happens not to sell
+ * anything.
+ *
+ * A pre-filled issue on the repository is the honest stand-in: it costs
+ * nothing, needs no payment processor and no published email address, and it
+ * captures the one thing that actually matters before checkout exists, which
+ * is that someone wanted to buy.
+ */
+const CHECKOUT_URL = process.env.CITABLE_CHECKOUT_URL || '';
+const REQUEST_URL = `${REPO}/issues/new?title=${
+  encodeURIComponent('Pro key request')
+}&body=${
+  encodeURIComponent(
+    'I would like a Citable Pro key ($49, one-time).\n\n'
+      + 'Site to audit:\n'
+      + 'Email to send the key to:\n\n'
+      + 'Checkout is not wired up yet, so keys are issued by hand — reply here and\n'
+      + 'you will get one back.\n',
+  )
+}`;
+
 /** The pages worth listing, in the order a reader would want them. */
 const PAGES = [
   { path: '/', priority: '1.0' },
@@ -87,11 +119,15 @@ function staticiseLanding(html) {
 await mkdir(outDir, { recursive: true });
 
 // 1. Landing page, with the non-functional audit form replaced.
-const landing = staticiseLanding(renderApp({ priceUrl: `${REPO}#free-vs-pro` }));
+const landing = staticiseLanding(renderApp({ priceUrl: CHECKOUT_URL, requestUrl: REQUEST_URL }));
 await writeFile(`${outDir}/index.html`, landing, 'utf8');
 
 // 2. The interactive demo, exactly as the hosted app serves it.
-await writeFile(`${outDir}/demo.html`, renderApp({ priceUrl: `${REPO}#free-vs-pro`, demoResult: SAMPLE_RESULT }), 'utf8');
+await writeFile(
+  `${outDir}/demo.html`,
+  renderApp({ priceUrl: CHECKOUT_URL, requestUrl: REQUEST_URL, demoResult: SAMPLE_RESULT }),
+  'utf8',
+);
 
 // 3. The two paid deliverables, so the value is visible rather than described.
 await writeFile(`${outDir}/sample-report.html`, renderHtml(SAMPLE_RESULT, { brand: 'Citable' }), 'utf8');

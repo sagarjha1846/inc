@@ -169,3 +169,67 @@ test('every page the sitemap lists is actually published', async (t) => {
     assert.ok(files.has(name), `sitemap lists ${name}, which the build does not produce`);
   }
 });
+
+test('no button offers to sell what the page cannot sell', async (t) => {
+  // The guard in renderApp only tests that the URL is not a known placeholder,
+  // which cannot tell a checkout from any other link. The static build passed
+  // the README's feature comparison table as `priceUrl`, so every visitor who
+  // clicked "Get a Pro key" landed on a chart — the exact broken promise the
+  // guard exists to prevent, and every test still passed.
+  //
+  // The invariant is about the promise, not the URL: a button may say "get" or
+  // "unlock" only when it leads somewhere that takes money.
+  const dir = await build(t);
+
+  for (const name of ['index.html', 'demo.html']) {
+    const html = await readFile(path.join(dir, name), 'utf8');
+    const buttons = [...html.matchAll(/<a class="cta[^"]*" href="([^"]+)">([^<]+)<\/a>/g)];
+    assert.ok(buttons.length > 0, `${name} should offer some way to buy`);
+
+    for (const [, href, label] of buttons) {
+      if (/get a pro key|unlock the full report/i.test(label)) {
+        assert.fail(`${name}: "${label}" promises a purchase but points at ${href}`);
+      }
+      // Whatever it does say, it must be reachable and honest about it.
+      assert.doesNotThrow(() => new URL(href), `${name}: ${label} → unparseable ${href}`);
+      assert.match(label, /request/i, `${name}: "${label}" should say it is a request, not a sale`);
+    }
+  }
+});
+
+test('the request path carries what is needed to fulfil a sale', async (t) => {
+  // A captured intent is only worth anything if it arrives with the site to
+  // audit and somewhere to send the key.
+  const dir = await build(t);
+  const html = await readFile(path.join(dir, 'index.html'), 'utf8');
+  const href = html.match(/<a class="cta cta-request" href="([^"]+)"/)[1];
+  const body = decodeURIComponent(new URL(href.replace(/&amp;/g, '&')).searchParams.get('body') || '');
+
+  assert.match(body, /Site to audit/);
+  assert.match(body, /Email to send the key to/);
+  assert.match(body, /\$49/);
+});
+
+test('a real checkout URL takes precedence over the request path', async (t) => {
+  // Wiring up payment must be a repository variable, not a code change, or it
+  // will not happen on the day it matters.
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'citable-site-checkout-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+
+  const code = await new Promise((resolve) => {
+    const child = spawn(process.execPath, ['scripts/build-site.mjs', dir], {
+      cwd: ROOT,
+      stdio: 'ignore',
+      env: { ...process.env, CITABLE_CHECKOUT_URL: 'https://checkout.example/buy' },
+    });
+    child.on('close', resolve);
+  });
+  assert.equal(code, 0);
+
+  const html = await readFile(path.join(dir, 'index.html'), 'utf8');
+  assert.match(html, /href="https:\/\/checkout\.example\/buy"/);
+  assert.match(html, /Get a Pro key/, 'with a real checkout the button sells again');
+  // The `.cta-request` CSS rule is always in the stylesheet; what must be absent
+  // is an anchor carrying it.
+  assert.doesNotMatch(html, /<a class="cta cta-request"/);
+});

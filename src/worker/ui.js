@@ -11,22 +11,42 @@ import { AI_CRAWLERS } from '../core/robots.js';
 
 /**
  * @param {object} options
- * @param {string} [options.priceUrl]   Where the buy button points.
+ * @param {string} [options.priceUrl]   A real checkout link. Buys immediately.
+ * @param {string} [options.requestUrl] Where to send someone who wants to buy
+ *   when no checkout exists yet. Standing up a payment processor is the one
+ *   step that needs an account and a decision; until it happens, the choice is
+ *   between a button that cannot take money and a way to reach the seller.
  * @param {number} [options.crawlerCount]
  * @param {object} [options.demoResult] A pre-computed audit rendered on load.
  *   Used by `/demo`, so a visitor sees a full report — the thing they are
  *   being asked to pay for — before they type anything.
  */
-export function renderApp({ priceUrl = '#pricing', crawlerCount = AI_CRAWLERS.length, demoResult = null } = {}) {
+export function renderApp({
+  priceUrl = '#pricing',
+  requestUrl = '',
+  crawlerCount = AI_CRAWLERS.length,
+  demoResult = null,
+} = {}) {
   // A deploy that never set CHECKOUT_URL would otherwise render live buy
   // buttons pointing at the placeholder link, so a visitor clicking "Get a Pro
   // key" lands on a 404 and the operator has no reason to notice. Failing
   // visibly is better than a broken promise.
-  const checkoutReady = Boolean(priceUrl) && priceUrl !== '#pricing' && !/CHANGE-ME/i.test(priceUrl);
-  const buyButton = (label) =>
-    checkoutReady
-      ? `<a class="cta" href="${priceUrl}">${label}</a>`
-      : `<span class="cta cta-disabled" role="note">Checkout not configured</span>`;
+  //
+  // The test is only that the URL is not a known placeholder, which cannot tell
+  // a checkout from any other link — the static site pointed these buttons at a
+  // feature table in the README and passed. So the label is chosen from which
+  // option was supplied rather than assumed: a button that says "buy" has to
+  // lead somewhere that takes money, and one that leads somewhere else has to
+  // say what it actually does.
+  const usable = (value) => Boolean(value) && value !== '#pricing' && !/CHANGE-ME/i.test(value);
+  const checkoutReady = usable(priceUrl);
+  const canRequest = !checkoutReady && usable(requestUrl);
+
+  const buyButton = (label, requestLabel) => {
+    if (checkoutReady) return `<a class="cta" href="${priceUrl}">${label}</a>`;
+    if (canRequest) return `<a class="cta cta-request" href="${requestUrl}">${requestLabel}</a>`;
+    return `<span class="cta cta-disabled" role="note">Checkout not configured</span>`;
+  };
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -112,6 +132,7 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;pa
 .cta{display:inline-block;background:var(--accent);color:#04120f;padding:12px 22px;border-radius:var(--radius);
   text-decoration:none;font-weight:650}
 .cta-disabled{background:var(--panel-2);color:var(--muted);border:1px dashed var(--line);cursor:not-allowed}
+.cta-request{background:var(--panel-2);color:var(--text);border:1px solid var(--accent)}
 .err{border-color:var(--red);color:var(--red)}
 .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
 .tab{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);padding:6px 13px;border-radius:9px;
@@ -185,7 +206,7 @@ footer{color:var(--muted);font-size:13px;padding:40px 0 60px;border-top:1px soli
           <li>Whole-site crawls and Markdown reports</li>
           <li>CI gate: fail builds when the score drops</li>
         </ul>
-        ${buyButton('Get a Pro key')}
+        ${buyButton('Get a Pro key', 'Request a Pro key')}
       </div>
     </div>
   </section>
@@ -290,7 +311,7 @@ function renderResult(result){
     <div class="lock">
       <p><strong>\${result.issuesWithheld} more finding\${result.issuesWithheld===1?'':'s'} found on this page.</strong><br>
       Pro unlocks all \${result.issuesTotal}, plus a generated robots.txt patch, llms.txt, JSON-LD and FAQ schema built from this page.</p>
-      ${buyButton('Unlock the full report — $49')}
+      ${buyButton('Unlock the full report — $49', 'Request a key — $49')}
     </div>\` : '';
 
   out.innerHTML = \`
