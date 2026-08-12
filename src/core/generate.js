@@ -71,6 +71,17 @@ function oneLine(value, limit = 120) {
 }
 
 /**
+ * The sentence that marks a generated llms.txt as still carrying our
+ * placeholder links.
+ *
+ * The `llms-txt` check looks for this exact string, which is why it is a shared
+ * constant rather than a literal in each file: two copies of a sentence in two
+ * modules drift the first time one of them is reworded, and the failure is
+ * silent — the check simply stops recognising the file it was written for.
+ */
+export const LLMS_PLACEHOLDER_MARKER = 'Replace the placeholder links below';
+
+/**
  * A starter llms.txt built from the page's real title, description and
  * internal link structure.
  */
@@ -105,7 +116,7 @@ export function generateLlmsTxt(ctx) {
     `> ${summary}`,
     '',
     'This file follows the llms.txt convention: a curated, plain-Markdown map of',
-    'this site for language models. Replace the placeholder links below with the',
+    `this site for language models. ${LLMS_PLACEHOLDER_MARKER} with the`,
     'pages you most want cited, newest and most authoritative first.',
     '',
     '## Core pages',

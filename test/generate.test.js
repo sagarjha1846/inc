@@ -12,7 +12,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { runChecks } from '../src/core/checks.js';
-import { generateAll, generateFaqSchema, generateJsonLd, generateLlmsTxt, generateRobotsPatch } from '../src/core/generate.js';
+import {
+  generateAll,
+  generateFaqSchema,
+  generateJsonLd,
+  generateLlmsTxt,
+  generateRobotsPatch,
+  LLMS_PLACEHOLDER_MARKER,
+} from '../src/core/generate.js';
 
 /** Build a checks context for a page body, with no network involved. */
 function context(html, url = 'https://acme.com/widgets') {
@@ -326,4 +333,41 @@ test('an unparseable date is ignored rather than emitted', () => {
   const article = JSON.parse(json)['@graph'].find((node) => node['@type'] === 'Article');
   assert.match(article.datePublished, /^\d{4}-\d{2}-\d{2}$/, 'garbage must not reach the output');
   assert.match(note, /default to today/, 'and the fallback is disclosed');
+});
+
+test('publishing the starter llms.txt unedited is reported, not blessed', () => {
+  // The starter ships placeholder links — /about, /docs, /changelog — that most
+  // sites do not have. Published as-is it satisfies every shape test (an H1, a
+  // summary, three or more links), so the audit used to call it well-formed:
+  // the tool confirming a broken state it had handed the customer.
+  const ctx = context(ORDINARY);
+  const starter = generateLlmsTxt(ctx);
+  assert.ok(starter.includes(LLMS_PLACEHOLDER_MARKER), 'the starter must carry the marker');
+
+  const audited = (body) => runChecks({
+    url: 'https://acme.com/page',
+    page: {
+      body: ORDINARY, status: 200, ok: true, headers: { 'content-type': 'text/html; charset=utf-8' },
+      elapsedMs: 5, bytes: ORDINARY.length, redirects: [], truncated: false, finalUrl: 'https://acme.com/page',
+    },
+    robots: { found: true, body: 'User-agent: *\nAllow: /\n' },
+    llms: { found: true, body },
+    sitemap: { found: false, body: '' },
+  }).findings.find((finding) => finding.id === 'llms-txt');
+
+  const unedited = audited(starter);
+  assert.equal(unedited.severity, 'low');
+  assert.match(unedited.title, /unedited starter/);
+  assert.match(unedited.fix, /Replace the placeholder links/);
+
+  // Removing the instructions and the placeholders is what "edited" means, and
+  // it has to be enough to pass — otherwise the advice has no endpoint.
+  const edited = starter
+    .split('\n')
+    .filter((line) => !/Replace the placeholder|This file follows|pages you most want cited|\/about|\/docs|\/changelog/.test(line))
+    .concat(['- [Guide](https://acme.com/guide): The guide.', '- [Pricing](https://acme.com/pricing): Plans.'])
+    .join('\n');
+  const clean = audited(edited);
+  assert.equal(clean.severity, 'pass');
+  assert.match(clean.title, /well-formed/);
 });

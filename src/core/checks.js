@@ -28,6 +28,7 @@ import {
 } from './html.js';
 import { CITATION_CRAWLERS, crawlerMatrix } from './robots.js';
 import { registrableDomain } from './fetch.js';
+import { LLMS_PLACEHOLDER_MARKER } from './generate.js';
 
 /** Category weights sum to 100 — the headline score is a straight percentage. */
 export const CATEGORIES = {
@@ -364,19 +365,37 @@ function checkAccess(ctx) {
   if (ctx.llms.found && ctx.llms.body.trim().length > 40) {
     const hasHeading = /^\s*#\s+\S/m.test(ctx.llms.body);
     const linkLines = (ctx.llms.body.match(/^\s*-\s*\[[^\]]+\]\([^)]+\)/gm) || []).length;
+
+    // The generated starter file ships placeholder links — /about, /docs,
+    // /changelog — and says so in a line the author is meant to delete along
+    // with them. Published unedited it satisfies every shape test above while
+    // pointing a model at pages that mostly 404, and the audit would confirm
+    // it as well-formed: the tool blessing a state it caused.
+    const unedited = ctx.llms.body.includes(LLMS_PLACEHOLDER_MARKER);
+    const wellFormed = hasHeading && linkLines >= 3 && !unedited;
+
     out.push(
       finding({
         id: 'llms-txt',
         category: 'access',
-        severity: hasHeading && linkLines >= 3 ? 'pass' : 'low',
-        title: hasHeading && linkLines >= 3 ? 'llms.txt is published and well-formed' : 'llms.txt exists but is thin',
-        detail:
-          hasHeading && linkLines >= 3
-            ? `Found ${linkLines} curated link(s) under a top-level heading — this is what a model reads to orient itself on your site.`
+        severity: wellFormed ? 'pass' : 'low',
+        title: wellFormed
+          ? 'llms.txt is published and well-formed'
+          : unedited
+            ? 'llms.txt is still the unedited starter file'
+            : 'llms.txt exists but is thin',
+        detail: wellFormed
+          ? `Found ${linkLines} curated link(s) under a top-level heading — this is what a model reads to orient itself on your site.`
+          : unedited
+            ? 'The file still contains the generated instructions and their placeholder links, which point at pages most sites do not have. A model following them reaches 404s, which is worse than publishing nothing.'
             : 'The file is present but does not follow the expected shape: an H1 with your site name, a blockquote summary, then linked sections.',
         evidence: ctx.llms.body.slice(0, 400),
-        fix: hasHeading && linkLines >= 3 ? null : 'Use the generated llms.txt in this report as a starting point.',
-        earned: hasHeading && linkLines >= 3 ? 2 : 1,
+        fix: wellFormed
+          ? null
+          : unedited
+            ? 'Replace the placeholder links with your real pages and delete the instruction paragraph above them.'
+            : 'Use the generated llms.txt in this report as a starting point.',
+        earned: wellFormed ? 2 : 1,
         max: 2,
       }),
     );
