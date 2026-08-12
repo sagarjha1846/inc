@@ -27,15 +27,22 @@ export function compareAudits(baseline, current, options = {}) {
   const { minSeverity = 'high' } = options;
   const threshold = SEVERITY_RANK[minSeverity] ?? SEVERITY_RANK.high;
 
-  if (!baseline || typeof baseline.score !== 'number') {
+  if (!baseline || !Number.isFinite(baseline.score)) {
     throw new Error('Baseline is not an audit result (no score field). Pass a file written by --json.');
   }
-  if (!current || typeof current.score !== 'number') {
+  if (!current || !Number.isFinite(current.score)) {
     throw new Error('Current result is not an audit result.');
   }
 
-  const baselineIssues = new Map((baseline.issues || []).map((issue) => [keyOf(issue), issue]));
-  const currentIssues = new Map((current.issues || []).map((issue) => [keyOf(issue), issue]));
+  // A baseline is a file on disk that someone may have hand-edited, truncated
+  // or pointed at by mistake, and this runs inside a build. A shape it did not
+  // expect must produce the message above, not a TypeError from `.map` on an
+  // object — in CI those look identical to the tool being broken, and the one
+  // thing the person reading the log needs is which file to look at.
+  const list = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
+
+  const baselineIssues = new Map(list(baseline.issues).map((issue) => [keyOf(issue), issue]));
+  const currentIssues = new Map(list(current.issues).map((issue) => [keyOf(issue), issue]));
 
   const fixed = [];
   const introduced = [];
@@ -59,9 +66,9 @@ export function compareAudits(baseline, current, options = {}) {
   }
 
   // Crawler access changes, which are the highest-signal regression of all.
-  const baselineCrawlers = new Map((baseline.crawlers || []).map((crawler) => [crawler.token, crawler]));
+  const baselineCrawlers = new Map(list(baseline.crawlers).map((crawler) => [crawler.token, crawler]));
   const crawlerChanges = [];
-  for (const crawler of current.crawlers || []) {
+  for (const crawler of list(current.crawlers)) {
     const before = baselineCrawlers.get(crawler.token);
     if (!before || before.allowed === crawler.allowed) continue;
     crawlerChanges.push({
@@ -77,10 +84,10 @@ export function compareAudits(baseline, current, options = {}) {
   }
   // A crawler present in the baseline but absent now means robots.txt
   // disappeared entirely, which is worth surfacing rather than ignoring.
-  const robotsDisappeared = (baseline.crawlers || []).length > 0 && (current.crawlers || []).length === 0;
+  const robotsDisappeared = list(baseline.crawlers).length > 0 && list(current.crawlers).length === 0;
 
   const categoryDeltas = {};
-  for (const [key, category] of Object.entries(current.categories || {})) {
+  for (const [key, category] of Object.entries(current.categories && typeof current.categories === 'object' ? current.categories : {})) {
     const before = baseline.categories && baseline.categories[key];
     if (!before) continue;
     categoryDeltas[key] = {

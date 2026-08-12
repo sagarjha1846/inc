@@ -255,3 +255,45 @@ test('a missing baseline file exits with a usage error', async () => {
   assert.equal(result.code, 2);
   assert.match(result.stderr, /could not read baseline/);
 });
+
+test('a baseline of the wrong shape is named, not crashed on', async () => {
+  // The baseline is a file on disk that can be hand-edited, truncated, or
+  // pointed at by mistake — `--baseline package.json` is one keystroke from
+  // `--baseline baseline.json`. This runs inside somebody's build, where a
+  // TypeError from `.map` and the tool being broken look identical, and the
+  // only thing the person reading the log needs is which file to look at.
+  const current = await auditUrl('https://acme.test/page', {
+    tier: 'pro',
+    fetchOptions: {
+      fetchImpl: async (url) => new Response(
+        String(url).endsWith('/robots.txt')
+          ? 'User-agent: *\nAllow: /\n'
+          : `<!doctype html><html lang="en"><head><title>A page about widgets</title></head><body><main><h1>Widgets</h1><p>${'Body copy. '.repeat(80)}</p></main></body></html>`,
+        { status: 200, headers: { 'content-type': String(url).endsWith('.txt') ? 'text/plain' : 'text/html; charset=utf-8' } },
+      ),
+    },
+  });
+
+  // Not an audit result at all: one clear message, whatever the file was.
+  for (const notAnAudit of [null, {}, { name: 'citable', version: '1.0.0' }, { score: NaN }, { score: '80' }]) {
+    assert.throws(
+      () => compareAudits(notAnAudit, current),
+      /not an audit result/,
+      `${JSON.stringify(notAnAudit)} should be reported, not crashed on`,
+    );
+  }
+
+  // Right enough to compare, wrong in its parts: compare what is there rather
+  // than throwing, since a usable verdict beats a broken build.
+  for (const damaged of [
+    { score: 80, issues: { a: 1 } },
+    { score: 80, issues: [null, undefined] },
+    { score: 80, issues: [], crawlers: 'nope' },
+    { score: 80, issues: [], crawlers: [null] },
+    { score: 80, issues: [], categories: 'x' },
+  ]) {
+    const diff = compareAudits(damaged, current);
+    assert.equal(typeof diff.regressed, 'boolean', `${JSON.stringify(damaged)} should still produce a verdict`);
+    assert.ok(diff.summary, 'and a summary a human can read');
+  }
+});
