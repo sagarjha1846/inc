@@ -19,7 +19,7 @@ Nothing, until there is revenue.
 | Rate limiting state | Workers KV free tier, optional | $0 |
 | CLI distribution | npm | $0 |
 | Source hosting, CI, the Action | GitHub | $0 |
-| License infrastructure | HMAC-signed keys, no database | $0 |
+| License infrastructure | Ed25519-signed keys, no database | $0 |
 | Payment | Gumroad / Lemon Squeezy / Polar / Stripe link | % of sales only |
 | Domain | optional; `*.workers.dev` works | $0–12/yr |
 
@@ -137,7 +137,13 @@ Stating this plainly, because a plan that only lists upside is not a plan:
    live at sagarjha1846.github.io/inc and the CLI installs from the repository, so the
    product is reachable today; the Worker adds the hosted audit endpoint, and npm makes
    `npx citable` work.
-2. Set up a checkout link. Put its URL in `wrangler.toml` for the Worker, and in a
+2. **Run `node scripts/issue-key.mjs --keygen`, before selling anything.** It writes
+   the signing key to `license.private.json` (gitignored — back it up) and prints a
+   public line to paste into `src/core/license.js` and commit. Until that is done,
+   `LICENSE_PUBLIC_KEY` is empty and every Pro key is refused, so a buyer would pay and
+   receive nothing. Confirm with `/api/health`: `portableKeysConfigured` must be true.
+
+3. Set up a checkout link. Put its URL in `wrangler.toml` for the Worker, and in a
    repository variable named `CITABLE_CHECKOUT_URL` for the static site — the site
    build reads it from the environment, so this is a settings change rather than a
    commit, and the buy buttons switch from "Request a Pro key" to a live checkout the
@@ -148,10 +154,10 @@ Stating this plainly, because a plan that only lists upside is not a plan:
    hand with `scripts/issue-key.mjs`. That is deliberately not a substitute for
    checkout — every manual step costs conversions — but it means a visitor who wants
    to buy today can say so, rather than clicking a button that cannot take money.
-3. Run the audit across 100 well-known sites, write up what you find, publish it.
-4. Offer free audits to the first ~20 people who engage with that post.
-5. Convert the ones with real problems into done-for-you engagements.
-6. Use those engagements to decide whether the recurring tier is worth building.
+4. Run the audit across 100 well-known sites, write up what you find, publish it.
+5. Offer free audits to the first ~20 people who engage with that post.
+6. Convert the ones with real problems into done-for-you engagements.
+7. Use those engagements to decide whether the recurring tier is worth building.
 
-Step 3 is the one that determines whether any of this works. The tool is built; the
+Step 4 is the one that determines whether any of this works. The tool is built; the
 distribution is the remaining job.
