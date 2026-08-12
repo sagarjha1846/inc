@@ -144,6 +144,47 @@ export function isPrivateHost(hostname) {
   return PRIVATE_HOST_NAMES.some((pattern) => pattern.test(inner));
 }
 
+/**
+ * Multi-part public suffixes common enough to matter here.
+ *
+ * This is a deliberate approximation of the Public Suffix List, which is
+ * thousands of entries and updated continuously — too much weight for a
+ * dependency-free package. Missing an entry makes two sibling subdomains under
+ * an unlisted suffix look like separate sites, which is the safe direction:
+ * it drops a page from a crawl rather than admitting a stranger's.
+ */
+const MULTI_PART_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'net.uk',
+  'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
+  'co.nz', 'co.za', 'co.jp', 'ne.jp', 'or.jp', 'co.kr', 'co.in',
+  'com.br', 'com.mx', 'com.ar', 'com.sg', 'com.hk', 'com.tr', 'com.cn',
+]);
+
+/** The registrable domain, so `www.a.com`, `blog.a.com` and `a.com` are one site. */
+export function registrableDomain(hostname) {
+  const labels = String(hostname || '').replace(/\.$/, '').split('.').filter(Boolean);
+  if (labels.length <= 2) return labels.join('.');
+  const lastTwo = labels.slice(-2).join('.');
+  return MULTI_PART_SUFFIXES.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;
+}
+
+/**
+ * A value that is equal for two hosts exactly when they are the same site.
+ *
+ * Address literals are returned whole. Reading them as domain names is a
+ * category error with a security consequence: the last two labels of
+ * `127.0.0.1` and `10.0.0.1` are both `0.1`, so treating an IP as a name makes
+ * every address on a `/16` look like one site, and a loopback sitemap could
+ * walk the local network.
+ */
+export function siteIdentity(hostname) {
+  const host = String(hostname || '').replace(/\.$/, '').toLowerCase();
+  if (!host) return '';
+  // IPv6 arrives from `URL` already bracketed; IPv4 is all digits and dots.
+  if (host.startsWith('[') || /^[\d.]+$/.test(host)) return host;
+  return registrableDomain(host);
+}
+
 export class FetchError extends Error {
   constructor(message, code) {
     super(message);

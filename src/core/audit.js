@@ -6,7 +6,8 @@
  * the UI so every surface — worker, CLI, CI action — enforces it identically.
  */
 
-import { fetchOptional, fetchPage, normalizeUrl } from './fetch.js';
+import { fetchOptional, fetchPage, normalizeUrl, siteIdentity } from './fetch.js';
+import { decodeEntities } from './html.js';
 import { runChecks, SEVERITY_ORDER } from './checks.js';
 import { prioritize, scoreFindings } from './score.js';
 import { generateAll } from './generate.js';
@@ -185,12 +186,51 @@ export async function auditSite(urls, options = {}) {
 }
 
 /**
+ * Turn one `<loc>` into a URL worth fetching, or null.
+ *
+ * A sitemap is a remote document written by whoever runs the site, and the
+ * crawl does what it says, so every value gets three things done to it:
+ *
+ * 1. Entity decoding. The sitemap protocol *requires* `&` be escaped, so any
+ *    URL with a query string arrives as `?a=1&amp;b=2`. Fetching that literally
+ *    requests a different page — usually a 404 — and the report then describes
+ *    a page the site does not have, without anything looking wrong.
+ * 2. Resolution against the sitemap's own URL, so a relative `<loc>` becomes a
+ *    real URL rather than a bare string that fails at fetch time.
+ * 3. Confinement to the audited site's registrable domain. Without it a
+ *    sitemap can point the crawl anywhere and the rollup silently reports on
+ *    somebody else's pages under the customer's name — and under
+ *    `--allow-private`, which exists so people can audit their own dev server,
+ *    a remote sitemap could steer the crawl at `169.254.169.254` and put the
+ *    cloud metadata response in a report. Confining by domain closes that
+ *    without making the flag less useful: a localhost sitemap still only
+ *    reaches localhost.
+ *
+ * `www.` and other subdomains count as the same site, since sitemap indexes
+ * routinely split a site across them. A sitemap hosted on an unrelated CDN is
+ * the case this rejects, and dropping those pages is the safe direction: a
+ * short crawl is recoverable, a report about the wrong site is not.
+ */
+function resolveLoc(raw, base, siteDomain) {
+  let url;
+  try {
+    url = new URL(decodeEntities(String(raw).trim()), base);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  if (siteIdentity(url.hostname) !== siteDomain) return null;
+  return url.toString();
+}
+
+/**
  * Pull candidate URLs out of a sitemap, including one level of sitemap-index
  * expansion.
  */
 export async function urlsFromSitemap(siteUrl, options = {}) {
   const { limit = 20, fetchOptions = {} } = options;
   const root = normalizeUrl(siteUrl, { allowPrivate: fetchOptions.allowPrivate });
+  const siteDomain = siteIdentity(root.hostname);
   const seen = [];
 
   const collect = async (target, depth) => {
@@ -198,7 +238,9 @@ export async function urlsFromSitemap(siteUrl, options = {}) {
     const response = await fetchOptional(target, '', fetchOptions);
     if (!response.found) return;
     const isIndex = /<sitemapindex\b/i.test(response.body);
-    const locs = [...response.body.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((match) => match[1]);
+    const locs = [...response.body.matchAll(/<loc>([^<]*)<\/loc>/gi)]
+      .map((match) => resolveLoc(match[1], target, siteDomain))
+      .filter(Boolean);
     if (isIndex) {
       for (const loc of locs.slice(0, 3)) {
         await collect(loc, depth + 1);

@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isPrivateHost, normalizeUrl } from '../src/core/fetch.js';
+import { isPrivateHost, normalizeUrl, siteIdentity } from '../src/core/fetch.js';
 
 const blocked = (url) => {
   try {
@@ -131,4 +131,23 @@ test('alternate IPv4 spellings are canonicalised before the check', () => {
   for (const url of ['http://127.1/', 'http://0x7f000001/', 'http://2130706433/', 'http://0177.0.0.1/']) {
     assert.throws(() => normalizeUrl(url), /private or loopback/, `${url} should be refused`);
   }
+});
+
+test('site identity treats an address literal as an address, not a domain', () => {
+  // The trap this exists for: the last two labels of 127.0.0.1 and 10.0.0.1
+  // are both "0.1", so reading an IP as a domain name makes every address on a
+  // /16 look like one site. The sitemap crawl confines itself with this, so
+  // that mistake would let a loopback sitemap walk the local network.
+  assert.notEqual(siteIdentity('127.0.0.1'), siteIdentity('10.0.0.1'));
+  assert.equal(siteIdentity('127.0.0.1'), '127.0.0.1');
+  assert.notEqual(siteIdentity('169.254.169.254'), siteIdentity('127.0.0.1'));
+
+  // Names still collapse to the registrable domain, including multi-part
+  // suffixes, so sibling subdomains of one site stay one site.
+  assert.equal(siteIdentity('www.example.com'), siteIdentity('blog.example.com'));
+  assert.equal(siteIdentity('shop.example.co.uk'), 'example.co.uk');
+  assert.notEqual(siteIdentity('example.com'), siteIdentity('example.com.evil.net'));
+
+  // A trailing dot is the same host, and case is not part of identity.
+  assert.equal(siteIdentity('Example.COM.'), siteIdentity('example.com'));
 });

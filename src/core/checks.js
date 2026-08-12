@@ -27,6 +27,7 @@ import {
   wordCount,
 } from './html.js';
 import { CITATION_CRAWLERS, crawlerMatrix } from './robots.js';
+import { registrableDomain } from './fetch.js';
 
 /** Category weights sum to 100 — the headline score is a straight percentage. */
 export const CATEGORIES = {
@@ -963,21 +964,6 @@ function checkMetadata(ctx) {
 
 /* --------------------------------------------------------------- authority */
 
-/**
- * Multi-part public suffixes common enough to matter here.
- *
- * This is a deliberate approximation of the Public Suffix List, which is
- * thousands of entries and updated continuously — too much weight for a
- * dependency-free package, and the cost of missing an entry is small: two
- * sibling subdomains under an unlisted suffix count as separate sites, which
- * only over-credits a citation rather than inventing a failure.
- */
-const MULTI_PART_SUFFIXES = new Set([
-  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'net.uk',
-  'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
-  'co.nz', 'co.za', 'co.jp', 'ne.jp', 'or.jp', 'co.kr', 'co.in',
-  'com.br', 'com.mx', 'com.ar', 'com.sg', 'com.hk', 'com.tr', 'com.cn',
-]);
 
 /** Hosts where a link is a profile or share button rather than a source. */
 const SELF_PROMOTION_HOSTS = new Set([
@@ -1015,14 +1001,6 @@ function canonicalRelation(canonical, audited) {
   // Same resource. Identical spelling is "self"; anything else is a variant
   // being folded onto the canonical spelling, which is the point of the tag.
   return canonical.toString().replace(/\/$/, '') === audited.toString().replace(/\/$/, '') ? 'self' : 'variant';
-}
-
-/** The registrable domain, so `www.a.com`, `blog.a.com` and `a.com` are one site. */
-function registrableDomain(hostname) {
-  const labels = String(hostname || '').replace(/\.$/, '').split('.').filter(Boolean);
-  if (labels.length <= 2) return labels.join('.');
-  const lastTwo = labels.slice(-2).join('.');
-  return MULTI_PART_SUFFIXES.has(lastTwo) ? labels.slice(-3).join('.') : lastTwo;
 }
 
 function checkAuthority(ctx) {

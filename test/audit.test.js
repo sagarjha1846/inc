@@ -224,6 +224,118 @@ test('urlsFromSitemap expands a sitemap index one level deep', async () => {
   assert.deepEqual(urls, ['https://good.test/a', 'https://good.test/b']);
 });
 
+/**
+ * A sitemap is a document written by whoever runs the audited site, and the
+ * crawl does what it says. Everything below is about not doing that blindly.
+ */
+const sitemapWith = (body) => ({
+  limit: 10,
+  fetchOptions: {
+    fetchImpl: stubFetch({
+      'https://good.test/sitemap.xml': { body, headers: { 'content-type': 'application/xml' } },
+    }),
+  },
+});
+
+test('a sitemap cannot send the crawl to another site', async () => {
+  // Otherwise a rollup titled for the customer silently reports on somebody
+  // else's pages, and the agency handing it over has no way to notice.
+  const urls = await urlsFromSitemap('https://good.test', sitemapWith(
+    `<urlset>
+      <url><loc>https://good.test/a</loc></url>
+      <url><loc>https://someone-else.test/theirs</loc></url>
+      <url><loc>https://good.test.evil.test/lookalike</loc></url>
+    </urlset>`,
+  ));
+  assert.deepEqual(urls, ['https://good.test/a']);
+});
+
+test('subdomains of the audited site are still the same site', async () => {
+  // Sitemap indexes routinely split a site across www, blog and docs hosts, so
+  // confinement has to be by registrable domain rather than exact host.
+  const urls = await urlsFromSitemap('https://good.test', sitemapWith(
+    '<urlset><url><loc>https://www.good.test/a</loc></url><url><loc>https://blog.good.test/b</loc></url></urlset>',
+  ));
+  assert.deepEqual(urls, ['https://www.good.test/a', 'https://blog.good.test/b']);
+});
+
+test('an escaped ampersand in a <loc> is decoded before fetching', async () => {
+  // The sitemap protocol requires `&` be escaped, so this is not an edge case:
+  // it is every URL with a query string. Fetching the literal text requests a
+  // page the site does not have, and the report describes that page instead.
+  const urls = await urlsFromSitemap('https://good.test', sitemapWith(
+    '<urlset><url><loc>https://good.test/search?a=1&amp;b=2</loc></url></urlset>',
+  ));
+  assert.deepEqual(urls, ['https://good.test/search?a=1&b=2']);
+});
+
+test('a relative <loc> resolves against the sitemap it came from', async () => {
+  const urls = await urlsFromSitemap('https://good.test', sitemapWith(
+    '<urlset><url><loc>/a</loc></url><url><loc>b</loc></url></urlset>',
+  ));
+  assert.deepEqual(urls, ['https://good.test/a', 'https://good.test/b']);
+});
+
+test('a <loc> that is not http(s) is dropped', async () => {
+  const urls = await urlsFromSitemap('https://good.test', sitemapWith(
+    `<urlset>
+      <url><loc>javascript:alert(1)</loc></url>
+      <url><loc>file:///etc/passwd</loc></url>
+      <url><loc>https://good.test/real</loc></url>
+    </urlset>`,
+  ));
+  assert.deepEqual(urls, ['https://good.test/real']);
+});
+
+test('--allow-private does not let a sitemap roam the local network', async () => {
+  // The flag exists so people can audit their own dev server. It must not also
+  // mean "and anywhere else this remote document names" — the cloud metadata
+  // endpoint being the case that turns a crawl into an SSRF.
+  const urls = await urlsFromSitemap('http://127.0.0.1:8080', {
+    limit: 10,
+    fetchOptions: {
+      allowPrivate: true,
+      fetchImpl: stubFetch({
+        'http://127.0.0.1:8080/sitemap.xml': {
+          body: `<urlset>
+            <url><loc>http://127.0.0.1:8080/mine</loc></url>
+            <url><loc>http://169.254.169.254/latest/meta-data/</loc></url>
+            <url><loc>http://10.0.0.1/lan</loc></url>
+          </urlset>`,
+          headers: { 'content-type': 'application/xml' },
+        },
+      }),
+    },
+  });
+  assert.deepEqual(urls, ['http://127.0.0.1:8080/mine']);
+});
+
+test('a sitemap index cannot be used to jump sites either', async () => {
+  const urls = await urlsFromSitemap('https://good.test', {
+    limit: 10,
+    fetchOptions: {
+      fetchImpl: stubFetch({
+        'https://good.test/sitemap.xml': {
+          body: `<sitemapindex>
+            <sitemap><loc>https://evil.test/pages.xml</loc></sitemap>
+            <sitemap><loc>https://good.test/pages.xml</loc></sitemap>
+          </sitemapindex>`,
+          headers: { 'content-type': 'application/xml' },
+        },
+        'https://evil.test/pages.xml': {
+          body: '<urlset><url><loc>https://evil.test/planted</loc></url></urlset>',
+          headers: { 'content-type': 'application/xml' },
+        },
+        'https://good.test/pages.xml': {
+          body: '<urlset><url><loc>https://good.test/a</loc></url></urlset>',
+          headers: { 'content-type': 'application/xml' },
+        },
+      }),
+    },
+  });
+  assert.deepEqual(urls, ['https://good.test/a']);
+});
+
 test('private and malformed hosts are refused before any request', async () => {
   await assert.rejects(() => auditUrl('http://localhost:3000/'), /private or loopback/);
   await assert.rejects(() => auditUrl('ftp://example.com/'), /Unsupported protocol/);
