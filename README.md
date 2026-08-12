@@ -201,8 +201,17 @@ console.log(result.score, result.grade);
 console.log(result.generated.robotsTxt);  // ready to paste
 ```
 
-Zero dependencies. Runs on Node 20+, Cloudflare Workers, Deno and Bun — nothing but
-`fetch` and WebCrypto.
+Zero dependencies — nothing but `fetch` and WebCrypto, so the core imports no
+platform modules at all.
+
+Verified on Node 22, Bun 1.3 and Deno 2.9, which produce identical scores and
+findings, and under `workerd` via `wrangler dev`. Re-check any runtime yourself:
+
+```bash
+node scripts/check-runtime.mjs
+bun  scripts/check-runtime.mjs
+deno run -A scripts/check-runtime.mjs
+```
 
 ## Free vs Pro
 
