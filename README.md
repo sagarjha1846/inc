@@ -254,10 +254,20 @@ The hosted app is one Cloudflare Worker with no database and no origin server, s
 runs inside the free tier:
 
 ```bash
+node scripts/issue-key.mjs --keygen      # once — creates the key that signs licences
 npx wrangler login
-npx wrangler secret put LICENSE_SECRET   # 32+ random characters
 npx wrangler deploy
 ```
+
+`--keygen` writes the private signing key to `license.private.json` (gitignored — back
+it up) and prints a public line to paste into `src/core/license.js` and commit. That
+public half ships in the package and is what a buyer's own machine verifies against,
+so **nothing sells until it is committed**. Check `/api/health` after deploying:
+`portableKeysConfigured` must be true.
+
+`LICENSE_SECRET` is the older, symmetric scheme. It still works on the Worker, but keys
+signed with it only verify where that same secret is present — so a buyer running the
+CLI gets the free tier despite having paid. Do not start there.
 
 See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, and
 [docs/MONETIZATION.md](docs/MONETIZATION.md) for how the paid tier is wired up.
@@ -272,7 +282,7 @@ git config core.hooksPath .githooks
 ```
 
 ```bash
-node --test                    # 309 tests, no install step
+node --test                    # 311 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```

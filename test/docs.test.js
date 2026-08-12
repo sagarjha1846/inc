@@ -210,3 +210,46 @@ test('the pre-push hook is present, executable and documented', () => {
 
   assert.match(readme, /git config core\.hooksPath \.githooks/, 'the README should say how to enable it');
 });
+
+/* --------------------------------------------------- licensing setup docs */
+
+test('every document that mentions the legacy secret also teaches --keygen', async () => {
+  // Three separate documents told a seller to set up licensing with
+  // LICENSE_SECRET alone: the README quickstart, the deploy guide, and the
+  // key-issuing script's own header. Following any of them produces a deploy
+  // where keys work in the web UI and nowhere else — a buyer running the CLI
+  // gets the free tier despite having paid.
+  //
+  // The secret is still legitimate for the Worker, so it cannot simply be
+  // banned. What must not happen again is a document naming it without naming
+  // the step that makes keys usable by the people who buy them.
+  const { readFileSync } = await import('node:fs');
+  const files = ['README.md', 'docs/DEPLOY.md', 'docs/MONETIZATION.md', 'scripts/issue-key.mjs'];
+
+  for (const name of files) {
+    const body = readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
+    if (!/LICENSE_SECRET/.test(body)) continue;
+    assert.match(
+      body,
+      /--keygen/,
+      `${name} documents LICENSE_SECRET without mentioning --keygen, so a reader sets up licensing that buyers cannot use`,
+    );
+  }
+});
+
+test('the compiled-in public key is a public key, not a secret', async () => {
+  // It ships in the npm package. Anything private here would be published to
+  // everyone who installs the CLI, which is precisely the failure the move away
+  // from a shared secret was meant to remove.
+  const { LICENSE_PUBLIC_KEY } = await import('../src/core/license.js');
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../src/core/license.js', import.meta.url), 'utf8');
+
+  assert.equal(typeof LICENSE_PUBLIC_KEY, 'string');
+  // An Ed25519 JWK private key is identified by its `d` member. If one were
+  // ever pasted in place of the public half, this catches it.
+  assert.doesNotMatch(source, /"d"\s*:/, 'no private JWK component may appear in a shipped file');
+  if (LICENSE_PUBLIC_KEY) {
+    assert.match(LICENSE_PUBLIC_KEY, /^[A-Za-z0-9_-]{43}$/, 'an Ed25519 public x is 43 base64url characters');
+  }
+});
