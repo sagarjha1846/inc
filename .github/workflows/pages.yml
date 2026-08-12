@@ -45,7 +45,7 @@ jobs:
       - name: Verify the build is complete and self-contained
         run: |
           set -e
-          for f in index.html demo.html sample-report.html sample-site-report.html robots.txt llms.txt .nojekyll; do
+          for f in index.html demo.html sample-report.html sample-site-report.html robots.txt sitemap.xml llms.txt .nojekyll; do
             test -f "site/$f" || { echo "missing site/$f"; exit 1; }
           done
           # A dead buy button or a leaked fixture host would both be visible to

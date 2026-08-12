@@ -43,6 +43,7 @@ test('the build produces every file the deploy expects', async (t) => {
     'sample-report.html',
     'sample-site-report.html',
     'robots.txt',
+    'sitemap.xml',
     'llms.txt',
     '.nojekyll',
   ]) {
@@ -131,4 +132,40 @@ test('the published site passes the policy it sells', async (t) => {
   assert.match(llms, /^# Citable/);
   assert.match(llms, /^> /m, 'llms.txt needs a summary blockquote');
   assert.ok((llms.match(/^- \[/gm) || []).length >= 3, 'llms.txt needs curated links');
+});
+
+test('the sitemap exists, is absolute, and robots.txt points at it', async (t) => {
+  // Both halves are the fix the audit prescribes for `sitemap`, so shipping one
+  // without the other would leave our own landing page failing our own check.
+  const dir = await build(t);
+  const sitemap = await readFile(path.join(dir, 'sitemap.xml'), 'utf8');
+
+  assert.match(sitemap, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
+  assert.match(sitemap, /<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/);
+
+  const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  assert.ok(locs.length >= 4, 'every published page belongs in the sitemap');
+  for (const loc of locs) {
+    // A relative <loc> is invalid per the protocol and is silently dropped.
+    assert.doesNotThrow(() => new URL(loc), `relative loc: ${loc}`);
+    assert.match(loc, /^https:\/\//, `${loc} should be absolute and secure`);
+  }
+
+  const robots = await readFile(path.join(dir, 'robots.txt'), 'utf8');
+  const declared = robots.match(/^Sitemap:\s*(\S+)$/m);
+  assert.ok(declared, 'robots.txt must declare the sitemap');
+  assert.ok(locs.some((loc) => loc.startsWith(new URL(declared[1]).origin)), 'the declared sitemap must share the site origin');
+});
+
+test('every page the sitemap lists is actually published', async (t) => {
+  // A sitemap advertising a 404 is worse than none: it spends crawl budget and
+  // signals a site that does not know its own shape.
+  const dir = await build(t);
+  const sitemap = await readFile(path.join(dir, 'sitemap.xml'), 'utf8');
+  const files = new Set(await readdir(dir));
+
+  for (const loc of [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1])) {
+    const name = new URL(loc).pathname.split('/').pop() || 'index.html';
+    assert.ok(files.has(name), `sitemap lists ${name}, which the build does not produce`);
+  }
 });

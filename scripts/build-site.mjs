@@ -25,6 +25,19 @@ import { AI_CRAWLERS } from '../src/core/robots.js';
 const outDir = process.argv[2] || 'site';
 const REPO = 'https://github.com/sagarjha1846/inc';
 
+// Sitemap entries have to be absolute — the protocol has no notion of a
+// relative location — so the published origin is named here rather than
+// derived. Everything else on the page stays relative and works from any host.
+const SITE = 'https://sagarjha1846.github.io/inc';
+
+/** The pages worth listing, in the order a reader would want them. */
+const PAGES = [
+  { path: '/', priority: '1.0' },
+  { path: '/demo.html', priority: '0.9' },
+  { path: '/sample-report.html', priority: '0.7' },
+  { path: '/sample-site-report.html', priority: '0.7' },
+];
+
 /**
  * The hosted app's audit form posts to /api/audit, which does not exist on a
  * static host. Rather than leave a button that fails, the form is replaced
@@ -48,10 +61,16 @@ function staticiseLanding(html) {
   </div>`;
 
   // Swap the interactive form and Pro-key row for the instructions above.
-  const start = html.indexOf('  <form id="f">');
-  const end = html.indexOf('</header>');
-  if (start === -1 || end === -1) throw new Error('landing page structure changed; update staticiseLanding()');
-  let out = html.slice(0, start) + replacement + '\n' + html.slice(end);
+  // The region is delimited by comment markers in the template rather than by
+  // hunting for the form and the end of a section: those two moved apart when
+  // the headline was relocated into <main>, and an index pair that no longer
+  // brackets the same region splices out the wrong span without erroring.
+  const start = html.indexOf('  <!--run-->');
+  const end = html.indexOf('<!--/run-->');
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error('landing page run-form markers missing or reordered; update staticiseLanding()');
+  }
+  let out = html.slice(0, start) + replacement + '\n  ' + html.slice(end + '<!--/run-->'.length);
 
   // The footer documents the JSON API, which does not exist on a static host
   // either. Leaving it advertises an endpoint that answers 404 here.
@@ -101,7 +120,19 @@ await writeFile(
   `${outDir}/robots.txt`,
   `# Citable — we practise what we audit.\n\n${citation
     .map((crawler) => `User-agent: ${crawler.token}\nAllow: /\n`)
-    .join('\n')}\nUser-agent: *\nAllow: /\n`,
+    .join('\n')}\nUser-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`,
+  'utf8',
+);
+
+// The audit tells every visitor to publish a sitemap and point robots.txt at
+// it. Ours flagged the same gap on our own landing page, which is the one site
+// where the advice is checkable before anyone buys.
+const lastmod = new Date().toISOString().slice(0, 10);
+await writeFile(
+  `${outDir}/sitemap.xml`,
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${PAGES
+    .map(({ path, priority }) => `  <url>\n    <loc>${SITE}${path}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <priority>${priority}</priority>\n  </url>\n`)
+    .join('')}</urlset>\n`,
   'utf8',
 );
 
@@ -134,4 +165,4 @@ await writeFile(
 // recognise and mangle others.
 await writeFile(`${outDir}/.nojekyll`, '', 'utf8');
 
-process.stderr.write(`build-site: wrote ${outDir}/ (index, demo, 2 sample reports, robots.txt, llms.txt)\n`);
+process.stderr.write(`build-site: wrote ${outDir}/ (index, demo, 2 sample reports, robots.txt, sitemap.xml, llms.txt)\n`);

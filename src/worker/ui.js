@@ -59,7 +59,7 @@ export function renderApp({ priceUrl = '#pricing', crawlerCount = AI_CRAWLERS.le
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased}
 a{color:var(--accent)}
 .wrap{max-width:940px;margin:0 auto;padding:0 20px}
-header{padding:56px 0 8px}
+header{padding:56px 0 0}
 .logo{font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
 h1{font-size:clamp(28px,5vw,44px);line-height:1.15;margin:14px 0 12px;letter-spacing:-.02em}
 .sub{color:var(--muted);font-size:17px;max-width:60ch;margin:0 0 28px}
@@ -135,11 +135,19 @@ footer{color:var(--muted);font-size:13px;padding:40px 0 60px;border-top:1px soli
 <body>
 <div class="wrap">
 
+<!-- Only the wordmark is site chrome. The headline and the sentence under it
+     are this page's own content, so they live in <main>: extractors discard
+     <header>, and a page that put its whole argument there would fail the
+     content-depth check this tool sells. -->
 <header>
   <div class="logo">Citable</div>
+</header>
+
+<main>
   <h1>Can AI answer engines actually cite your site?</h1>
   <p class="sub">ChatGPT, Claude, Perplexity and Google AI Overviews send traffic to pages they can crawl, read and trust. Most sites fail at least one of the three without knowing. Check yours in about ten seconds.</p>
 
+  <!--run-->
   <form id="f">
     <input id="url" type="url" placeholder="https://yoursite.com/page" required autocomplete="url" spellcheck="false">
     <button id="go" type="submit">Run free audit</button>
@@ -149,9 +157,8 @@ footer{color:var(--muted);font-size:13px;padding:40px 0 60px;border-top:1px soli
     <input id="key" type="text" placeholder="CTB1…  (optional)" spellcheck="false" autocomplete="off">
     <span>unlocks every finding + generated fix files</span>
   </div>
-</header>
+  <!--/run-->
 
-<main>
   <div id="out"></div>
 
   <section id="pricing" class="card">
