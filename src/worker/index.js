@@ -210,7 +210,14 @@ async function handleAudit(request, env, url) {
 async function handleLicense(request, env, url) {
   const key = url.searchParams.get('key') || (request.headers.get('authorization') || '').replace(/^bearer /i, '').trim();
   if (!key) return json({ error: 'missing_key', message: 'Pass a `key` to check.' }, 400);
-  if (!env.LICENSE_SECRET) return json({ valid: false, reason: 'no_secret_configured' }, 503);
+  // Only a deploy with neither half configured can verify nothing. Gating on
+  // LICENSE_SECRET alone refused CTB2 keys — the portable kind, which need no
+  // secret — with a 503, so a buyer checking a perfectly good key was told the
+  // service was broken. The same mistake as the CLI's, in a second place: a
+  // check for one credential standing in for "can this verify a key at all".
+  if (!env.LICENSE_SECRET && !LICENSE_PUBLIC_KEY) {
+    return json({ valid: false, reason: 'no_verifier_configured' }, 503);
+  }
 
   const license = await verifyKey(key, env.LICENSE_SECRET, { revoked: env.REVOKED_KEYS });
   // Deliberately never echoes the key back, and reports only what the holder

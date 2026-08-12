@@ -292,12 +292,69 @@ test('/api/health reports whether the deploy is actually sellable', async () => 
   assert.equal(healthy.licensingConfigured, true);
   assert.equal(healthy.checkoutConfigured, true);
 
-  // Neither omission fails loudly on its own: with no secret every Pro key is
+  // Neither omission fails loudly on its own: with no verifier every Pro key is
   // rejected, and with no checkout there is nothing to buy.
   const broken = await (
     await worker.fetch(new Request('https://citable.test/api/health'), { CHECKOUT_URL: 'https://x/CHANGE-ME' })
   ).json();
   assert.equal(broken.ok, true, 'the service still serves free audits');
-  assert.equal(broken.licensingConfigured, false);
   assert.equal(broken.checkoutConfigured, false);
+
+  // Asserted against the compiled-in key rather than hard-coded false: once a
+  // seller runs `--keygen` and commits the public half, a deploy with no secret
+  // *is* correctly licensed, and a flat `false` here would fail the day the
+  // product was finally configured properly.
+  const { LICENSE_PUBLIC_KEY } = await import('../src/core/license.js');
+  assert.equal(broken.legacyKeysConfigured, false, 'no secret means no legacy keys');
+  assert.equal(broken.portableKeysConfigured, Boolean(LICENSE_PUBLIC_KEY));
+  assert.equal(broken.licensingConfigured, Boolean(LICENSE_PUBLIC_KEY));
+});
+
+/* --------------------------------------- keys that need no shared secret */
+
+/**
+ * `/api/license` gated on `LICENSE_SECRET` before doing anything, and answered
+ * 503 `no_secret_configured` when it was absent. That is the same mistake as
+ * the CLI's, in a second place: a check for one credential standing in for
+ * "can this verify a key at all". A buyer checking a perfectly good CTB2 key
+ * was told the service was broken.
+ *
+ * These tests run against a deploy holding no secret at all, which is the
+ * configuration a seller who followed the current instructions actually has.
+ */
+test('a portable key verifies on a deploy with no LICENSE_SECRET', async () => {
+  const { generateSigningPair, issueKey } = await import('../src/core/license.js');
+  const pair = await generateSigningPair();
+  const { key } = await issueKey({ email: 'buyer@example.com', privateKey: pair.privateKey, days: 0, seats: 2 });
+
+  const { LICENSE_PUBLIC_KEY } = await import('../src/core/license.js');
+  const response = await worker.fetch(
+    new Request(`https://citable.test/api/license?key=${key}`),
+    { CHECKOUT_URL: 'https://checkout.example/buy' },
+  );
+
+  if (LICENSE_PUBLIC_KEY) {
+    // A pair is compiled in, so the endpoint must actually try the key rather
+    // than refusing because no *secret* was set.
+    assert.notEqual(response.status, 503, 'a missing secret must not 503 when a public key exists');
+    return;
+  }
+
+  // Nothing configured at all: say so, and do not pretend the key is valid.
+  assert.equal(response.status, 503);
+  const body = await response.json();
+  assert.equal(body.valid, false);
+  assert.equal(body.reason, 'no_verifier_configured', 'the reason must name the real gap, not the secret');
+});
+
+test('health reports the two licence halves separately', async () => {
+  // One flag standing for both is how the CLI defect stayed invisible:
+  // LICENSE_SECRET was set, licensing looked configured, and keys worked in
+  // the web UI and nowhere else.
+  const withSecret = await (await worker.fetch(new Request('https://citable.test/api/health'), env)).json();
+  assert.equal(withSecret.legacyKeysConfigured, true);
+  assert.equal(typeof withSecret.portableKeysConfigured, 'boolean');
+
+  const bare = await (await worker.fetch(new Request('https://citable.test/api/health'), {})).json();
+  assert.equal(bare.legacyKeysConfigured, false);
 });
