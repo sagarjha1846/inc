@@ -128,8 +128,15 @@ Stating this plainly, because a plan that only lists upside is not a plan:
 
 ## What to do next, in order
 
-1. Deploy the Worker and publish the CLI (`docs/DEPLOY.md`). Nothing else matters until
-   the thing is reachable.
+0. **Merge this branch to `main`.** The code lives on a feature branch and the default
+   branch holds only the README, so `github:sagarjha1846/inc` — the short install form
+   people will try — resolves to a branch with no package in it. Every documented
+   command currently has to name the branch explicitly. This is a one-minute change
+   that removes friction from the first thing anyone does.
+1. Deploy the Worker and publish the CLI (`docs/DEPLOY.md`). The static site is already
+   live at sagarjha1846.github.io/inc and the CLI installs from the repository, so the
+   product is reachable today; the Worker adds the hosted audit endpoint, and npm makes
+   `npx citable` work.
 2. Set up a checkout link and put its URL in `wrangler.toml`.
 3. Run the audit across 100 well-known sites, write up what you find, publish it.
 4. Offer free audits to the first ~20 people who engage with that post.

@@ -11,7 +11,7 @@ change.
 
 ```bash
 # No npm publish needed — install straight from this repository
-npx github:sagarjha1846/inc yoursite.com
+npx github:sagarjha1846/inc#claude/monetizable-project-ideas-o45uuc yoursite.com
 ```
 
 ```
@@ -94,35 +94,56 @@ those are different decisions. Blocking training crawlers is a legitimate conten
 policy. Blocking citation crawlers is almost always an accident, and Citable scores
 them differently for exactly that reason.
 
+## Install
+
+The package is not on npm yet, so install it straight from this repository.
+The branch is spelled out because the code lives on a feature branch: the
+default branch carries only this README, and the short `github:owner/repo`
+form resolves there and fails. Merging to `main` is what makes the short form
+work.
+
+```bash
+npm install -g github:sagarjha1846/inc#claude/monetizable-project-ideas-o45uuc
+```
+
+Or run it without installing:
+
+```bash
+npx github:sagarjha1846/inc#claude/monetizable-project-ideas-o45uuc yoursite.com
+```
+
+Once it is published to npm, `npm install -g citable` and `npx citable` will
+work as well; every example below uses the bare `citable` command either way.
+
 ## Usage
 
 ```bash
 # One page
-npx citable example.com
+citable example.com
 
 # Show the evidence behind each finding
-npx citable example.com --verbose
+citable example.com --verbose
 
 # Whole site, from the sitemap
-npx citable example.com --site --limit 30
+citable example.com --site --limit 30
 
 # A Markdown report you can hand to a client
-npx citable example.com --site --markdown --out audit.md
+citable example.com --site --markdown --out audit.md
 
 # A white-labelled HTML report (prints and saves to PDF cleanly)
-npx citable client.com --html --out audit.html \
+citable client.com --html --out audit.html \
   --brand "Acme Digital" --prepared-for "Client Co" --accent "#7c3aed"
 
 # The same for a whole site — leads with the issues that repeat across pages,
 # since those are one fix in a shared template rather than one fix per page
-npx citable client.com --site --limit 30 --html --out site-audit.html \
+citable client.com --site --limit 30 --html --out site-audit.html \
   --brand "Acme Digital" --prepared-for "Client Co"
 
 # Your dev server, before you ship
-npx citable http://localhost:3000 --allow-private
+citable http://localhost:3000 --allow-private
 
 # JSON for scripting
-npx citable example.com --json | jq '.crawlers[] | select(.allowed == false)'
+citable example.com --json | jq '.crawlers[] | select(.allowed == false)'
 ```
 
 ### In CI
@@ -130,7 +151,7 @@ npx citable example.com --json | jq '.crawlers[] | select(.allowed == false)'
 Fail the build when a deploy would make you less citable:
 
 ```bash
-npx citable https://yoursite.com --min-score 80 --fail-on critical
+citable https://yoursite.com --min-score 80 --fail-on critical
 ```
 
 ### Catching regressions
@@ -141,10 +162,10 @@ nothing, fails no test, and silently removes you from an answer engine:
 
 ```bash
 # Record a baseline once
-npx citable yoursite.com --json --out baseline.json
+citable yoursite.com --json --out baseline.json
 
 # On every deploy, compare against it
-npx citable yoursite.com --baseline baseline.json --fail-on-regression
+citable yoursite.com --baseline baseline.json --fail-on-regression
 ```
 
 ```
@@ -203,7 +224,7 @@ was found on your page, so the fix is a paste rather than a project.
 
 ```bash
 export CITABLE_KEY="CTB1..."
-npx citable yoursite.com --site --markdown --out audit.md
+citable yoursite.com --site --markdown --out audit.md
 ```
 
 ## Where it runs
@@ -211,7 +232,7 @@ npx citable yoursite.com --site --markdown --out audit.md
 | Surface | URL | What works |
 | --- | --- | --- |
 | Static site | [sagarjha1846.github.io/inc](https://sagarjha1846.github.io/inc/) | Landing page, interactive demo report, both sample deliverables |
-| CLI | `npx github:sagarjha1846/inc yoursite.com` | Everything, no rate limit |
+| CLI | `citable yoursite.com` (see Install) | Everything, no rate limit |
 | Hosted app | your own Cloudflare Worker | Everything, including the live web UI |
 
 The static site cannot run live audits: auditing a URL needs a server-side fetch, which
@@ -235,7 +256,7 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, and
 ## Development
 
 ```bash
-node --test                    # 199 tests, no install step
+node --test                    # 202 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```

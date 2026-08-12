@@ -39,7 +39,7 @@ function staticiseLanding(html) {
       Live audits need a server-side fetch — a browser cannot request another site directly.
       This page is the demo; the auditor itself runs from your terminal, with no rate limit:
     </p>
-    <pre style="font-size:14px"><code>npx github:sagarjha1846/inc yoursite.com</code></pre>
+    <pre style="font-size:14px"><code>npx github:sagarjha1846/inc#claude/monetizable-project-ideas-o45uuc yoursite.com</code></pre>
     <p class="fix" style="margin-top:14px">
       Or <a href="./demo.html">see a complete sample report</a> first, and
       <a href="${REPO}#self-hosting">deploy the hosted version</a> to a free Cloudflare Worker
@@ -59,7 +59,7 @@ function staticiseLanding(html) {
   if (!apiLine.test(out)) throw new Error('footer API line not found; update staticiseLanding()');
   out = out.replace(
     apiLine,
-    `  <p>CLI: <code>npx github:sagarjha1846/inc example.com</code> · ` +
+    `  <p>CLI: <code>npx github:sagarjha1846/inc#claude/monetizable-project-ideas-o45uuc example.com</code> · ` +
       `the JSON API ships with the <a href="${REPO}#self-hosting">self-hosted Worker</a>.</p>\n`,
   );
   return out;
@@ -117,7 +117,7 @@ await writeFile(
 - [Live demo report](./demo.html): A complete Pro-tier audit of an example page.
 - [Sample client report](./sample-report.html): The single-page deliverable.
 - [Sample site report](./sample-site-report.html): The whole-site deliverable.
-- [Source and install](${REPO}): \`npx github:sagarjha1846/inc yoursite.com\`
+- [Source and install](${REPO}): \`npx github:sagarjha1846/inc#claude/monetizable-project-ideas-o45uuc yoursite.com\`
 
 ## What it checks
 

@@ -121,3 +121,58 @@ test('every version string agrees with package.json', () => {
     `user agent says ${agentVersion[1]} but the package is ${pkg.version}`,
   );
 });
+
+/* --------------------------------------------------- install instructions */
+
+const buildSite = readFileSync(new URL('../scripts/build-site.mjs', import.meta.url), 'utf8');
+
+/**
+ * Every `github:` install target that appears as a *command*.
+ *
+ * Matched only after `npx` or `npm install`, so prose explaining the shorthand
+ * — "the short `github:owner/repo` form fails" — is not mistaken for an
+ * instruction the reader is meant to run.
+ */
+function installTargets(text) {
+  return [...text.matchAll(/(?:npx|npm install(?:\s+-g)?)\s+(github:[\w.-]+\/[\w.-]+(?:#[^\s`"')]+)?)/g)].map(
+    (match) => match[1],
+  );
+}
+
+test('documented install commands name a ref that carries the package', () => {
+  // The code lives on a feature branch; the default branch holds only the
+  // README. `github:owner/repo` resolves to the default branch, so the short
+  // form installs nothing and fails with ENOENT — which is what the headline
+  // command on the README and the published landing page both used to say.
+  const targets = [...installTargets(readme), ...installTargets(buildSite)];
+  assert.ok(targets.length > 0, 'expected install commands to be documented');
+
+  for (const target of targets) {
+    assert.ok(
+      target.includes('#'),
+      `"${target}" resolves to the default branch, which does not carry package.json. ` +
+        'Pin the ref, or merge the code to the default branch and update this test.',
+    );
+  }
+});
+
+test('the README and the published landing page agree on how to install', () => {
+  // The landing page is generated separately, so the two drift independently
+  // and a reader can be told two different things by the same product.
+  const fromReadme = new Set(installTargets(readme));
+  const fromSite = new Set(installTargets(buildSite));
+  for (const target of fromSite) {
+    assert.ok(fromReadme.has(target), `the site says "${target}" but the README never does`);
+  }
+});
+
+test('no example invokes a command that is not installable yet', () => {
+  // `npx citable` only works once the package is on npm. Until then every
+  // example has to be reachable, either through the bare binary after an
+  // install step or through the pinned github: form.
+  // At the start of a line, i.e. as something to run. The same words inside a
+  // sentence about what will work after publishing are a statement, not an
+  // instruction.
+  assert.doesNotMatch(readme, /^\s*npx citable\b/m, 'npx citable 404s until the package is published');
+  assert.match(readme, /^## Install$/m, 'the README needs an install section for the bare command to make sense');
+});
