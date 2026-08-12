@@ -57,8 +57,8 @@ function run(dir, args, env = {}) {
   });
 }
 
-/** The key is the only line that looks like one. */
-const keyFrom = (stdout) => stdout.split('\n').map((l) => l.trim()).find((l) => /^CTB1\./.test(l));
+/** The key is the only line that looks like one, in either format. */
+const keyFrom = (stdout) => stdout.split('\n').map((l) => l.trim()).find((l) => /^CTB[12]\./.test(l));
 
 test('a key issued for a buyer verifies against the same secret', async (t) => {
   const dir = await scriptIn(t);
@@ -210,4 +210,74 @@ test('--find is case-insensitive and reports an unknown buyer', async (t) => {
 
   const missing = await run(dir, ['--find', 'nobody@example.com']);
   assert.notEqual(missing.code, 0, 'an unknown buyer must not exit as though it succeeded');
+});
+
+/* ---------------------------------------------- portable keys, end to end */
+
+/**
+ * The full seller sequence, run as a seller runs it: generate a pair, issue a
+ * key, verify it. This is the path a real sale takes, and every step of it was
+ * broken in a different way before — the key format could not be verified on a
+ * buyer's machine at all, and `--verify` reported a freshly issued key as
+ * invalid because the public half was not yet committed.
+ */
+test('keygen, issue and verify work as one sequence', async (t) => {
+  const dir = await scriptIn(t);
+  const noSecret = { CITABLE_LICENSE_SECRET: '' };
+
+  const keygen = await run(dir, ['--keygen'], noSecret);
+  assert.equal(keygen.code, 0, keygen.stderr);
+  assert.match(keygen.stdout, /LICENSE_PUBLIC_KEY = '[A-Za-z0-9_-]{20,}'/, 'prints the line to paste');
+
+  const written = JSON.parse(await readFile(path.join(dir, 'license.private.json'), 'utf8'));
+  assert.equal(written.crv, 'Ed25519');
+  assert.ok(written.d, 'the private half must be written');
+
+  // Issued with no HMAC secret at all — the private key is the only credential.
+  const issued = await run(dir, ['buyer@example.com'], noSecret);
+  assert.equal(issued.code, 0, issued.stderr);
+  const key = issued.stdout.split('\n').map((l) => l.trim()).find((l) => /^CTB2\./.test(l));
+  assert.ok(key, `no CTB2 key in output:\n${issued.stdout}`);
+
+  // Verified before the public constant is committed, which is the state a
+  // seller is actually in between running keygen and editing the source.
+  const verified = await run(dir, ['--verify', key], noSecret);
+  assert.equal(verified.code, 0, 'a key just issued must verify');
+  assert.match(verified.stdout, /"valid": true/);
+  assert.match(verified.stdout, /buyer@example\.com/);
+
+  const tampered = await run(dir, ['--verify', `${key.slice(0, -4)}ZZZZ`], noSecret);
+  assert.notEqual(tampered.code, 0);
+  assert.match(tampered.stdout, /"valid": false/);
+});
+
+test('the private signing key never appears in what is sent to a buyer', async (t) => {
+  // The output is pasted into an email. The private half leaking there hands
+  // every recipient the ability to mint their own keys — the exact failure the
+  // move away from a shared secret was meant to remove.
+  const dir = await scriptIn(t);
+  await run(dir, ['--keygen'], { CITABLE_LICENSE_SECRET: '' });
+  const priv = JSON.parse(await readFile(path.join(dir, 'license.private.json'), 'utf8'));
+
+  const issued = await run(dir, ['buyer@example.com'], { CITABLE_LICENSE_SECRET: '' });
+  assert.doesNotMatch(issued.stdout, new RegExp(priv.d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(issued.stderr, new RegExp(priv.d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  const ledger = await readFile(path.join(dir, 'licenses.ndjson'), 'utf8');
+  assert.doesNotMatch(ledger, new RegExp(priv.d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('--find re-derives a portable key identically', async (t) => {
+  // Deterministic signing is why Ed25519 was chosen over ECDSA: re-issuing a
+  // *different* key would leave the buyer's original still live.
+  const dir = await scriptIn(t);
+  await run(dir, ['--keygen'], { CITABLE_LICENSE_SECRET: '' });
+
+  const issued = await run(dir, ['buyer@example.com', '--days', '365', '--seats', '2'], { CITABLE_LICENSE_SECRET: '' });
+  const original = keyFrom(issued.stdout);
+  assert.ok(original && original.startsWith('CTB2.'), `no portable key issued:\n${issued.stdout}`);
+
+  const found = await run(dir, ['--find', 'buyer@example.com'], { CITABLE_LICENSE_SECRET: '' });
+  assert.equal(found.code, 0, found.stderr);
+  assert.equal(keyFrom(found.stdout), original, 're-derivation must return the identical key');
 });

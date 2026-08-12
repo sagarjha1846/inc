@@ -7,13 +7,21 @@
  * and it means the product needs no webhook endpoint, no database and no
  * payment-provider integration to start taking money.
  *
- *   CITABLE_LICENSE_SECRET=... node scripts/issue-key.mjs buyer@example.com
- *   CITABLE_LICENSE_SECRET=... node scripts/issue-key.mjs buyer@example.com --days 365
- *   CITABLE_LICENSE_SECRET=... node scripts/issue-key.mjs --verify CTB1...
- *   CITABLE_LICENSE_SECRET=... node scripts/issue-key.mjs --find buyer@example.com
+ *   node scripts/issue-key.mjs --keygen              once, before the first sale
+ *   node scripts/issue-key.mjs buyer@example.com
+ *   node scripts/issue-key.mjs buyer@example.com --days 365
+ *   node scripts/issue-key.mjs --verify CTB2...
+ *   node scripts/issue-key.mjs --find buyer@example.com
  *
- * The same secret must be set as the LICENSE_SECRET Worker secret, or keys
- * will not validate in the hosted app.
+ * `--keygen` writes the Ed25519 signing key to license.private.json and prints
+ * the public half to paste into src/core/license.js. Nothing sells until that
+ * public half is committed: it is what a buyer's own machine verifies against,
+ * and without it every key is refused.
+ *
+ * CITABLE_LICENSE_SECRET still signs the older CTB1 keys. Do not start there —
+ * HMAC is symmetric, so those keys only verify where the signing secret is
+ * also present, which means the hosted Worker and nowhere else. A buyer sent
+ * one gets the free tier despite having paid.
  */
 
 import process from 'node:process';
@@ -154,7 +162,12 @@ ${'-'.repeat(66)}
   }
 
   if (argv[0] === '--verify') {
-    const result = await verifyKey(argv[1], secret);
+    // An Ed25519 private JWK carries its own public half in `x`, so the seller
+    // can check a key they just issued without having committed the public
+    // constant yet. Without this the sequence "keygen, issue, verify" reports
+    // the fresh key as invalid, which reads as the key being broken rather
+    // than as one setup step still outstanding.
+    const result = await verifyKey(argv[1], secret, privateKey ? { publicKey: privateKey.x } : {});
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     process.exit(result.valid ? 0 : 1);
   }
