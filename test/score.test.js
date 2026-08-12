@@ -136,12 +136,15 @@ test('the points a report prints are the points the finding is worth', async () 
 
   const markdown = renderMarkdown(result);
   const html = renderHtml(result);
+  // " point" rather than " points": the phrase is singular at exactly 1, and a
+  // fixture that drifted to a 1-point finding would otherwise fail for a reason
+  // that has nothing to do with what this test is checking.
   assert.ok(
-    markdown.includes(`Recovers up to ${differing.points} points`),
+    markdown.includes(`Recovers up to ${differing.points} point`),
     `markdown should print ${differing.points}, not the raw gap ${differing.max - differing.earned}`,
   );
   assert.ok(
-    html.includes(`Recovers up to ${differing.points} points`),
+    html.includes(`Recovers up to ${differing.points} point`),
     `html should print ${differing.points}, not the raw gap ${differing.max - differing.earned}`,
   );
 

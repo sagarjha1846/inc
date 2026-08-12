@@ -54,6 +54,12 @@ function pointsFor(issue) {
   return Math.round((issue.max - issue.earned) * 10) / 10;
 }
 
+/** "1 point", "1.9 points" — the report is a document, not a log line. */
+function pointsPhrase(issue) {
+  const points = pointsFor(issue);
+  return `${points} point${points === 1 ? '' : 's'}`;
+}
+
 
 function bar(ratio) {
   const filled = Math.round(Math.max(0, Math.min(1, ratio)) * BAR_WIDTH);
@@ -117,8 +123,13 @@ export function renderMarkdown(result, options = {}) {
       lines.push(`**Fix:** ${issue.fix}`);
       lines.push('');
     }
-    lines.push(`*Recovers up to ${pointsFor(issue)} points.*`);
-    lines.push('');
+    // A finding worth nothing is informational — the training-crawler note
+    // scores full marks and exists so the reader knows the policy is in force.
+    // Printing "Recovers up to 0 points" under it reads like list padding.
+    if (pointsFor(issue) > 0) {
+      lines.push(`*Recovers up to ${pointsPhrase(issue)}.*`);
+      lines.push('');
+    }
   });
 
   if (result.issuesWithheld > 0) {
@@ -292,7 +303,7 @@ export function renderHtml(result, options = {}) {
     ${issue.evidence ? `<pre>${escapeHtml(String(issue.evidence).slice(0, 1200))}</pre>` : ''}
     ${issue.impact ? `<p class="meta"><strong>Costs you:</strong> ${escapeHtml(issue.impact)}</p>` : ''}
     ${issue.fix ? `<p class="meta fix"><strong>Fix:</strong> ${escapeHtml(issue.fix)}</p>` : ''}
-    <p class="points">Recovers up to ${pointsFor(issue)} points</p>
+    ${pointsFor(issue) > 0 ? `<p class="points">Recovers up to ${pointsPhrase(issue)}</p>` : ''}
   </section>`,
     )
     .join('\n');
