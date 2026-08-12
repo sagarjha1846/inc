@@ -256,3 +256,42 @@ test('a Pro key passed to the action unlocks the paid output', async (t) => {
   assert.equal(artifact.tier, 'pro', 'the key should have reached the CLI through the step env');
   assert.ok(artifact.generated, 'pro results carry the generated fix files');
 });
+
+test('a licence problem never fails the build, and never passes silently', async (t) => {
+  // The realistic customer setup: the key is a repository secret and nothing
+  // else. A runner has no LICENSE_SECRET, and giving customers one would be
+  // giving them the ability to mint keys — so the existing test above, which
+  // sets a secret, describes a state no buyer is ever in. It could not have
+  // caught the CLI refusing portable keys.
+  //
+  // What must hold regardless of how the deploy is configured: a key that
+  // cannot be verified degrades to the free tier rather than exploding, and
+  // says why. A CI gate that fails the build over a licence problem is worse
+  // than one reporting a lower tier, and one that goes quiet is worse still —
+  // that silence is exactly how a paying customer stayed on the free tier
+  // without noticing.
+  const site = await startSite();
+  t.after(() => site.stop());
+  const cwd = await workspace(t);
+
+  const { generateSigningPair, issueKey } = await import('../src/core/license.js');
+  const pair = await generateSigningPair();
+  const { key } = await issueKey({ email: 'buyer@test.co', privateKey: pair.privateKey, days: 0 });
+  assert.ok(key.startsWith('CTB2.'), 'the portable format is what a buyer receives');
+
+  // This pair is not the one compiled into the package, so the key cannot
+  // verify — which is precisely the case being checked.
+  const previous = process.env.CITABLE_LICENSE_SECRET;
+  delete process.env.CITABLE_LICENSE_SECRET;
+  t.after(() => {
+    if (previous !== undefined) process.env.CITABLE_LICENSE_SECRET = previous;
+  });
+
+  const run = await runAction({ url: site.url, key }, { cwd });
+  assert.equal(run.code, 0, `an unverifiable key must not fail the build:\n${run.stderr}`);
+  assert.match(run.stderr, /not accepted/, 'and it must say so rather than going quiet');
+
+  const artifact = JSON.parse(await readFile(path.join(cwd, 'citable-result.json'), 'utf8'));
+  assert.equal(artifact.tier, 'free');
+  assert.ok(artifact.score >= 0, 'the audit itself still ran and is still useful');
+});
