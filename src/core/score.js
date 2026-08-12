@@ -74,13 +74,41 @@ function verdictFor(score, findings) {
  * first, then by how many points each fix actually recovers.
  */
 export function prioritize(findings) {
+  // A finding's `max` is in its category's own units, and each category is
+  // normalised to its weight — so one unit is worth `weight / available` real
+  // points, and that rate differs per category. Ranking by the raw gap compares
+  // units from different scales as though they were the same.
+  //
+  // Today the rates sit between 0.94 and 1.00, so the raw gap orders almost
+  // identically and nothing material inverts. That is a coincidence, not a
+  // property: every category's checks currently happen to sum to its weight.
+  // One new check with a `max` that breaks that sum silently rescales its whole
+  // category, and the first symptom is a free user being shown the wrong three
+  // findings — the one moment the product has to be persuasive.
+  //
+  // Converting to real points costs one pass over the findings and makes the
+  // order correct by construction, so the calibration no longer has to hold.
+  const available = {};
+  for (const item of findings) {
+    available[item.category] = (available[item.category] || 0) + item.max;
+  }
+  const pointsRecovered = (item) => {
+    const total = available[item.category] || 0;
+    const weight = CATEGORIES[item.category] ? CATEGORIES[item.category].weight : 0;
+    return total > 0 ? ((item.max - item.earned) * weight) / total : 0;
+  };
+
   return findings
     .filter((item) => item.severity !== 'pass')
-    .map((item) => ({ ...item, gap: item.max - item.earned }))
+    .map((item) => ({
+      ...item,
+      gap: item.max - item.earned,
+      points: Math.round(pointsRecovered(item) * 10) / 10,
+    }))
     .sort((a, b) => {
       const bySeverity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
       if (bySeverity !== 0) return bySeverity;
-      return b.gap - a.gap;
+      return b.points - a.points;
     });
 }
 

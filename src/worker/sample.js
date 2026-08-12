@@ -243,7 +243,8 @@ export const SAMPLE_RESULT = {
       "fix": "Add explicit Allow rules for these user-agents (see the generated robots.txt patch in this report).",
       "earned": 6,
       "max": 10,
-      "gap": 4
+      "gap": 4,
+      "points": 3.8
     },
     {
       "id": "jsonld-present",
@@ -256,7 +257,8 @@ export const SAMPLE_RESULT = {
       "fix": "Add a JSON-LD block — the report generates one tailored to this page.",
       "earned": 0,
       "max": 7,
-      "gap": 7
+      "gap": 7,
+      "points": 7
     },
     {
       "id": "entity-schema",
@@ -269,7 +271,8 @@ export const SAMPLE_RESULT = {
       "fix": "Add an Organization node with `name`, `url`, `logo` and `sameAs` links to your official profiles.",
       "earned": 0,
       "max": 4,
-      "gap": 4
+      "gap": 4,
+      "points": 4
     },
     {
       "id": "content-schema",
@@ -282,7 +285,8 @@ export const SAMPLE_RESULT = {
       "fix": "Add the schema.org type that matches this page, with its required fields populated.",
       "earned": 0,
       "max": 4,
-      "gap": 4
+      "gap": 4,
+      "points": 4
     },
     {
       "id": "https",
@@ -295,20 +299,8 @@ export const SAMPLE_RESULT = {
       "fix": "Issue a certificate (free via Let’s Encrypt) and redirect HTTP to HTTPS.",
       "earned": 0,
       "max": 2,
-      "gap": 2
-    },
-    {
-      "id": "llms-txt",
-      "category": "access",
-      "severity": "low",
-      "title": "No llms.txt published",
-      "detail": "llms.txt is a plain-Markdown index at your site root that tells models what your site is and which pages matter. Adoption is early, the cost is one file, and it is one of the few levers with no downside.",
-      "evidence": "https://northwind.example/llms.txt → 404",
-      "impact": "Missed orientation for agents that look for it before crawling.",
-      "fix": "Publish the generated llms.txt included in this report at https://yourdomain/llms.txt.",
-      "earned": 0,
-      "max": 2,
-      "gap": 2
+      "gap": 2,
+      "points": 1.9
     },
     {
       "id": "canonical",
@@ -321,7 +313,8 @@ export const SAMPLE_RESULT = {
       "fix": "Add exactly one self-referencing `<link rel=\"canonical\">` so citation credit consolidates on one URL.",
       "earned": 0,
       "max": 2,
-      "gap": 2
+      "gap": 2,
+      "points": 2
     },
     {
       "id": "author",
@@ -334,7 +327,8 @@ export const SAMPLE_RESULT = {
       "fix": "Name the author in visible text and in `author` structured data.",
       "earned": 0,
       "max": 2,
-      "gap": 2
+      "gap": 2,
+      "points": 2
     },
     {
       "id": "freshness",
@@ -347,7 +341,22 @@ export const SAMPLE_RESULT = {
       "fix": "Publish `datePublished` and `dateModified` in structured data and show the date on the page.",
       "earned": 0,
       "max": 2,
-      "gap": 2
+      "gap": 2,
+      "points": 2
+    },
+    {
+      "id": "llms-txt",
+      "category": "access",
+      "severity": "low",
+      "title": "No llms.txt published",
+      "detail": "llms.txt is a plain-Markdown index at your site root that tells models what your site is and which pages matter. Adoption is early, the cost is one file, and it is one of the few levers with no downside.",
+      "evidence": "https://northwind.example/llms.txt → 404",
+      "impact": "Missed orientation for agents that look for it before crawling.",
+      "fix": "Publish the generated llms.txt included in this report at https://yourdomain/llms.txt.",
+      "earned": 0,
+      "max": 2,
+      "gap": 2,
+      "points": 1.9
     },
     {
       "id": "open-graph",
@@ -360,7 +369,8 @@ export const SAMPLE_RESULT = {
       "fix": "Add `og:title`, `og:description`, `og:url` and `og:image`.",
       "earned": 1,
       "max": 2,
-      "gap": 1
+      "gap": 1,
+      "points": 1
     },
     {
       "id": "citations",
@@ -373,7 +383,8 @@ export const SAMPLE_RESULT = {
       "fix": "Link to the primary sources, standards or data your claims rest on.",
       "earned": 0,
       "max": 1,
-      "gap": 1
+      "gap": 1,
+      "points": 1
     },
     {
       "id": "training-crawlers-blocked",
@@ -386,7 +397,8 @@ export const SAMPLE_RESULT = {
       "fix": "No action needed if this is intentional policy.",
       "earned": 2,
       "max": 2,
-      "gap": 0
+      "gap": 0,
+      "points": 0
     }
   ],
   "issuesTotal": 12,
