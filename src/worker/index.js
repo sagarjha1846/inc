@@ -8,7 +8,7 @@
 
 import { auditUrl } from '../core/audit.js';
 import { renderHtml, renderMarkdown } from '../core/report.js';
-import { tierFor, verifyKey } from '../core/license.js';
+import { LICENSE_PUBLIC_KEY, tierFor, verifyKey } from '../core/license.js';
 import { AI_CRAWLERS } from '../core/robots.js';
 import { FetchError } from '../core/fetch.js';
 import { renderApp } from './ui.js';
@@ -94,7 +94,15 @@ export default {
           // Both are easy to forget on a first deploy and neither fails loudly
           // on its own: without a secret every Pro key is rejected, and without
           // a checkout link there is no way to buy one.
-          licensingConfigured: Boolean(env.LICENSE_SECRET),
+          // Two independent halves. LICENSE_SECRET verifies legacy CTB1 keys
+          // here on the server; LICENSE_PUBLIC_KEY verifies CTB2 keys, which is
+          // the only kind a buyer can use on their own machine. A deploy with
+          // the first and not the second sells keys that work in the web UI and
+          // nowhere else, which is how the CLI silently gave buyers the free
+          // tier — so both are reported rather than one flag standing for both.
+          licensingConfigured: Boolean(env.LICENSE_SECRET) || Boolean(LICENSE_PUBLIC_KEY),
+          legacyKeysConfigured: Boolean(env.LICENSE_SECRET),
+          portableKeysConfigured: Boolean(LICENSE_PUBLIC_KEY),
           checkoutConfigured: Boolean(env.CHECKOUT_URL) && !/CHANGE-ME/i.test(env.CHECKOUT_URL || ''),
         });
 

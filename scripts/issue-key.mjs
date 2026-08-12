@@ -17,10 +17,35 @@
  */
 
 import process from 'node:process';
-import { appendFile, readFile } from 'node:fs/promises';
-import { issueKey, keyFromPayload, verifyKey } from '../src/core/license.js';
+import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import { generateSigningPair, issueKey, keyFromPayload, verifyKey } from '../src/core/license.js';
 
 const LEDGER = new URL('../licenses.ndjson', import.meta.url);
+const PRIVATE_KEY_FILE = new URL('../license.private.json', import.meta.url);
+
+/**
+ * The Ed25519 private half, if a pair has been generated.
+ *
+ * Keys signed with this verify against the public constant compiled into the
+ * package, which means a buyer needs nothing but the key itself. The old HMAC
+ * path only worked where the signing secret was also present, so a buyer who
+ * followed the emailed instructions silently got the free tier.
+ */
+async function loadPrivateKey() {
+  const fromEnv = process.env.CITABLE_LICENSE_KEY;
+  if (fromEnv) {
+    try {
+      return JSON.parse(fromEnv);
+    } catch {
+      usage('CITABLE_LICENSE_KEY is set but is not valid JSON (expected an Ed25519 JWK)');
+    }
+  }
+  try {
+    return JSON.parse(await readFile(PRIVATE_KEY_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
 
 function usage(message) {
   if (message) process.stderr.write(`issue-key: ${message}\n\n`);
@@ -29,11 +54,15 @@ function usage(message) {
   issue-key --verify <key>
   issue-key --find <email>    re-derive the key already sold to this buyer
   issue-key --list
+  issue-key --keygen          create the signing pair (run once, first)
 
   --days 0   lifetime key (default; matches a one-time purchase)
   --days 365 annual key, expires after a year
 
-Requires CITABLE_LICENSE_SECRET in the environment.
+Signing uses license.private.json (or CITABLE_LICENSE_KEY). Run --keygen once
+to create it. CITABLE_LICENSE_SECRET still signs legacy CTB1 keys, which only
+verify where that same secret is configured — the hosted Worker, not a buyer's
+machine.
 `);
   process.exit(message ? 2 : 0);
 }
@@ -42,9 +71,35 @@ async function main() {
   const argv = process.argv.slice(2);
   if (!argv.length || argv.includes('--help')) usage();
 
+  if (argv[0] === '--keygen') {
+    const { privateKey, publicX } = await generateSigningPair();
+    await writeFile(PRIVATE_KEY_FILE, `${JSON.stringify(privateKey, null, 2)}\n`, { mode: 0o600 });
+    process.stdout.write(`
+Signing pair created.
+${'-'.repeat(66)}
+Private half written to license.private.json (gitignored, mode 600).
+Losing it means every future key must be re-issued under a new pair; leaking
+it means anyone can mint Pro keys. Back it up somewhere you would keep a
+password.
+
+Paste this line into src/core/license.js, replacing the empty value, then
+commit it — the public half is meant to ship:
+
+export const LICENSE_PUBLIC_KEY = '${publicX}';
+
+${'-'.repeat(66)}
+`);
+    return;
+  }
+
+  const privateKey = await loadPrivateKey();
   const secret = process.env.CITABLE_LICENSE_SECRET;
-  if (!secret) usage('set CITABLE_LICENSE_SECRET first (32+ random characters)');
-  if (secret.length < 24) usage('CITABLE_LICENSE_SECRET is too short — use at least 24 characters');
+  if (!privateKey && !secret) {
+    usage('no signing key — run `node scripts/issue-key.mjs --keygen` first');
+  }
+  if (!privateKey && secret && secret.length < 24) {
+    usage('CITABLE_LICENSE_SECRET is too short — use at least 24 characters');
+  }
 
   if (argv[0] === '--list') {
     try {
@@ -88,7 +143,7 @@ async function main() {
       // Signing is deterministic, so this returns the key they were sent
       // rather than minting a second one for the same purchase.
       const { i, e, p, s: seats, x, issuedAt } = entry;
-      const key = await keyFromPayload({ v: entry.v, i, e, p, s: seats, t: entry.t, x }, secret);
+      const key = await keyFromPayload({ v: entry.v, i, e, p, s: seats, t: entry.t, x }, { secret, privateKey });
       const status = x === 0 ? 'lifetime' : x * 1000 < Date.now() ? `EXPIRED ${new Date(x * 1000).toISOString().slice(0, 10)}` : `expires ${new Date(x * 1000).toISOString().slice(0, 10)}`;
       process.stdout.write(`\n${e}  ·  ${p}  ·  ${seats} seat(s)  ·  ${status}\n`);
       process.stdout.write(`issued ${issuedAt || 'unknown'}  ·  id ${i}\n`);
@@ -117,7 +172,7 @@ async function main() {
   const plan = flag('plan', 'pro');
   const seats = Number.parseInt(flag('seats', '1'), 10) || 1;
 
-  const { key, payload } = await issueKey({ email, plan, days, seats, secret });
+  const { key, payload } = await issueKey({ email, plan, days, seats, secret, privateKey });
 
   // The ledger is the record of what was sold — needed to honour refunds and
   // to populate REVOKED_KEY_IDS if a key leaks.

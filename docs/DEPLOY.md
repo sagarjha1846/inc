@@ -44,7 +44,7 @@ curl "https://citable.<you>.workers.dev/api/audit?url=example.com" | head -40
 ```
 
 Check both configuration flags. Neither omission fails loudly on its own: without
-`LICENSE_SECRET` every Pro key is rejected and buyers quietly get the free tier, and
+a signing pair (`--keygen`) every Pro key is rejected and buyers quietly get the free tier, and
 without a real `CHECKOUT_URL` there is nothing to buy. If checkout is unset, the site
 renders "Checkout not configured" in place of the buy buttons rather than linking
 visitors to a dead page — visible to you, and not a broken promise to them.
@@ -108,16 +108,40 @@ No payment integration is required to start. The flow is deliberately manual:
 3. You issue a key and email it:
 
 ```bash
-export CITABLE_LICENSE_SECRET="<the same secret you gave the Worker>"
-node scripts/issue-key.mjs buyer@example.com          # lifetime key
+node scripts/issue-key.mjs --keygen                       # once, before the first sale
+node scripts/issue-key.mjs buyer@example.com              # lifetime key
 node scripts/issue-key.mjs buyer@example.com --days 365   # annual key
 ```
 
 The script prints the key plus ready-to-send instructions, and appends a record to
 `licenses.ndjson` (gitignored — it contains customer emails).
 
-**The Worker's `LICENSE_SECRET` and your local `CITABLE_LICENSE_SECRET` must match**,
-or keys you issue will not validate.
+### Do `--keygen` before you sell anything
+
+`--keygen` creates an Ed25519 pair. The private half goes to `license.private.json`
+(gitignored, mode 600) and signs keys; the public half is a line you paste into
+`src/core/license.js` and commit, because it ships in the package and is what lets a
+buyer's machine verify a key.
+
+**Until you do this, `LICENSE_PUBLIC_KEY` is empty and every Pro key is refused with
+`no_public_key_configured`.** Check `/api/health` — `portableKeysConfigured` must be
+true, not just `licensingConfigured`.
+
+Back the private half up somewhere you would keep a password. Losing it means
+re-issuing every key ever sold under a new pair; leaking it means anyone can mint Pro
+keys for free.
+
+### Why not just the shared secret
+
+`LICENSE_SECRET` signs the older `CTB1` keys with an HMAC, and HMAC is symmetric —
+verifying a key requires the same secret that mints one. That works on the Worker,
+which holds the secret and never shows it to anyone. It cannot work on a buyer's
+machine: the published package ships no secret, so a `CTB1` key there is rejected and
+the buyer silently gets the free tier despite having paid. Handing them the secret
+would let them mint their own keys.
+
+`CTB2` keys have no such problem, so issue those. `LICENSE_SECRET` remains only so
+that keys sold before the change keep working in the hosted app.
 
 Automate this only once the volume justifies it. A webhook that mints keys is one more
 thing that can break at 3am, and manual issuance catches card fraud for free.
@@ -148,7 +172,6 @@ Signing is deterministic, so the original key can be re-derived from the ledger 
 than issuing a second one:
 
 ```bash
-export CITABLE_LICENSE_SECRET="..."
 node scripts/issue-key.mjs --find buyer@example.com
 ```
 
@@ -158,11 +181,11 @@ and a fresh `issue-key` run would silently extend the licence.
 
 ### Letting buyers check their own key
 
-`GET /api/license?key=CTB1...` reports whether a key is valid, its plan, seat count and
+`GET /api/license?key=CTB2...` reports whether a key is valid, its plan, seat count and
 expiry — without spending an audit. Point people at it before they email you:
 
 ```bash
-curl "https://citable.<you>.workers.dev/api/license?key=CTB1..."
+curl "https://citable.<you>.workers.dev/api/license?key=CTB2..."
 { "valid": true, "reason": null, "plan": "pro", "seats": 1, "expiresAt": "2027-02-11T..." }
 ```
 
@@ -172,17 +195,16 @@ It never echoes the key or the buyer's email back, so it is safe to share the UR
 
 ```bash
 # Issue yourself a key
-export CITABLE_LICENSE_SECRET="..."
 node scripts/issue-key.mjs you@yourdomain.com
 
 # It should unlock Pro locally
-CITABLE_KEY="CTB1..." node bin/citable.js example.com --json | jq '.tier, .generated.robotsTxt'
+CITABLE_KEY="CTB2..." node bin/citable.js example.com --json | jq '.tier, .generated.robotsTxt'
 
 # And on the hosted app
-curl "https://citable.<you>.workers.dev/api/audit?url=example.com&key=CTB1..." | jq '.tier'
+curl "https://citable.<you>.workers.dev/api/audit?url=example.com&key=CTB2..." | jq '.tier'
 
 # The licence endpoint should agree
-curl "https://citable.<you>.workers.dev/api/license?key=CTB1..." | jq '.valid'
+curl "https://citable.<you>.workers.dev/api/license?key=CTB2..." | jq '.valid'
 ```
 
 If the hosted call returns `"free"` with a `licenseWarning`, the two secrets do not

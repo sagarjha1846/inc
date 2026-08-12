@@ -158,3 +158,98 @@ test('a re-derived key carries the original expiry, not a fresh one', async () =
   const verified = await verifyKey(rederived, SECRET);
   assert.equal(verified.expiresAt, new Date(payload.x * 1000).toISOString());
 });
+
+/* ------------------------------------------- portable keys a buyer can use */
+
+/**
+ * The defect these exist for: HMAC is symmetric, so verifying a CTB1 key needs
+ * the same secret that mints one. The published package ships no secret — quite
+ * correctly — so a buyer who paid, set CITABLE_KEY and ran the documented
+ * command was told "license key not accepted" and given the free tier. Making
+ * it work would have meant handing every buyer the key-minting secret.
+ */
+test('a CTB2 key verifies with no secret anywhere', async () => {
+  const { generateSigningPair, issueKey, tierFor } = await import('../src/core/license.js');
+  const pair = await generateSigningPair();
+  const { key } = await issueKey({ email: 'buyer@example.com', privateKey: pair.privateKey, days: 0 });
+
+  assert.ok(key.startsWith('CTB2.'), 'a key signed with the private half is a CTB2 key');
+
+  // No secret argument at all — this is a buyer's machine.
+  const resolved = await tierFor(key, undefined, { publicKey: pair.publicX });
+  assert.equal(resolved.tier, 'pro');
+  assert.equal(resolved.license.email, 'buyer@example.com');
+  assert.equal(resolved.license.expiresAt, null);
+});
+
+test('the public half cannot mint keys', async () => {
+  // The whole reason it is safe to ship. A key signed by any other pair must
+  // fail, or publishing the verifier would publish the ability to forge.
+  const { generateSigningPair, issueKey, verifyKey } = await import('../src/core/license.js');
+  const seller = await generateSigningPair();
+  const forger = await generateSigningPair();
+
+  const forged = await issueKey({ email: 'thief@example.com', privateKey: forger.privateKey, days: 0 });
+  const checked = await verifyKey(forged.key, undefined, { publicKey: seller.publicX });
+  assert.equal(checked.valid, false);
+  assert.equal(checked.reason, 'bad_signature');
+
+  // And the shipped public value carries no private component.
+  assert.equal(seller.publicKey.d, undefined, 'an exported public JWK must have no d');
+});
+
+test('a tampered CTB2 payload is refused', async () => {
+  const { generateSigningPair, issueKey, verifyKey } = await import('../src/core/license.js');
+  const pair = await generateSigningPair();
+  const { key } = await issueKey({ email: 'buyer@example.com', privateKey: pair.privateKey, days: 30 });
+  const [prefix, body, signature] = key.split('.');
+
+  // Re-sign nothing; just swap the payload for a lifetime one.
+  const upgraded = Buffer.from(JSON.stringify({ v: 1, i: 'x', e: 'b@c.d', p: 'pro', s: 99, t: 1, x: 0 }))
+    .toString('base64url');
+  const forged = `${prefix}.${upgraded}.${signature}`;
+  assert.equal((await verifyKey(forged, undefined, { publicKey: pair.publicX })).valid, false);
+
+  // A flipped signature byte too.
+  const flipped = `${prefix}.${body}.${signature.slice(0, -2)}${signature.slice(-2) === 'AA' ? 'BB' : 'AA'}`;
+  assert.equal((await verifyKey(flipped, undefined, { publicKey: pair.publicX })).valid, false);
+});
+
+test('CTB2 signing is deterministic, so a lost key comes back identical', async () => {
+  // "I lost my key" is the most common support request a one-time purchase
+  // generates. Re-issuing a *different* key would leave the buyer's original
+  // still live, accumulating keys that cannot be revoked as a set. ECDSA would
+  // have broken this; Ed25519 signatures are deterministic.
+  const { generateSigningPair, keyFromPayload } = await import('../src/core/license.js');
+  const pair = await generateSigningPair();
+  const payload = { v: 1, i: 'k_fixed', e: 'buyer@example.com', p: 'pro', s: 1, t: 1786000000, x: 0 };
+
+  const first = await keyFromPayload(payload, { privateKey: pair.privateKey });
+  const second = await keyFromPayload(payload, { privateKey: pair.privateKey });
+  assert.equal(first, second);
+});
+
+test('an unconfigured public key refuses CTB2 keys rather than accepting them', async () => {
+  // Failing open here would make every forged key valid on a fresh install.
+  const { generateSigningPair, issueKey, verifyKey, LICENSE_PUBLIC_KEY } = await import('../src/core/license.js');
+  const pair = await generateSigningPair();
+  const { key } = await issueKey({ email: 'buyer@example.com', privateKey: pair.privateKey, days: 0 });
+
+  const checked = await verifyKey(key, undefined, { publicKey: '' });
+  assert.equal(checked.valid, false);
+  assert.equal(checked.reason, LICENSE_PUBLIC_KEY ? 'bad_signature' : 'no_public_key_configured');
+});
+
+test('CTB1 keys still verify where the secret is configured', async () => {
+  // The Worker holds LICENSE_SECRET, so keys already sold must keep working.
+  const { issueKey, tierFor } = await import('../src/core/license.js');
+  const secret = 'a-legacy-signing-secret-of-ample-length';
+  const { key } = await issueKey({ email: 'old@example.com', secret, days: 0 });
+
+  assert.ok(key.startsWith('CTB1.'));
+  assert.equal((await tierFor(key, secret)).tier, 'pro');
+  // And without it, they degrade rather than throwing.
+  const without = await tierFor(key, undefined);
+  assert.equal(without.tier, 'free');
+  assert.equal(without.license.reason, 'no_secret_configured');
+});

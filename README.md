@@ -232,7 +232,7 @@ The generators are the point of Pro: they emit the actual files, filled in with 
 was found on your page, so the fix is a paste rather than a project.
 
 ```bash
-export CITABLE_KEY="CTB1..."
+export CITABLE_KEY="CTB2..."
 citable yoursite.com --site --markdown --out audit.md
 ```
 
@@ -272,7 +272,7 @@ git config core.hooksPath .githooks
 ```
 
 ```bash
-node --test                    # 298 tests, no install step
+node --test                    # 304 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```

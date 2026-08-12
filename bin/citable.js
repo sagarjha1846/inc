@@ -200,7 +200,12 @@ function parseArgs(argv) {
  * (or one supplied via env for self-hosted licensing).
  */
 async function resolveTier(key) {
-  const secret = process.env.CITABLE_LICENSE_SECRET || (await loadBundledSecret());
+  // No bundled secret, deliberately. CTB2 keys verify against the public key
+  // compiled into src/core/license.js and need nothing here; CTB1 keys need
+  // the signing secret, which only the seller and the Worker ever have. The
+  // previous fallback read a "secret" out of a bundled file — shipping that
+  // would have handed every buyer the ability to mint their own keys.
+  const secret = process.env.CITABLE_LICENSE_SECRET;
   if (!key) return { tier: 'free', license: null };
   const resolved = await tierFor(key, secret, { revoked: process.env.CITABLE_REVOKED_KEYS });
   if (resolved.tier !== 'pro') {
@@ -208,16 +213,6 @@ async function resolveTier(key) {
     process.stderr.write(`citable: license key not accepted (${reason || 'invalid'}); continuing on the free tier.\n`);
   }
   return resolved;
-}
-
-async function loadBundledSecret() {
-  try {
-    const url = new URL('../license.public.json', import.meta.url);
-    const raw = await readFile(url, 'utf8');
-    return JSON.parse(raw).secret || null;
-  } catch {
-    return null;
-  }
 }
 
 async function main() {

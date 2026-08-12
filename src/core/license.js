@@ -2,18 +2,60 @@
  * License keys, verified offline.
  *
  * A key is a signed payload, not a database row: the buyer's plan and expiry
- * travel inside the key and are checked with an HMAC. That means the CLI can
- * validate a Pro key with no network call, the hosted worker needs no
+ * travel inside the key and are checked against a signature. That means the CLI
+ * can validate a Pro key with no network call, the hosted worker needs no
  * database, and the whole billing side of the product costs nothing to run.
  *
  * The trade-off is that keys cannot be revoked by deleting a record, so
  * `REVOKED_KEY_IDS` carries a small deny-list for refunds and leaks, and keys
  * carry an expiry so a subscription lapse eventually closes the door.
+ *
+ * ## Why there are two formats
+ *
+ * `CTB1` keys are HMAC-signed, and HMAC is symmetric: verifying a key requires
+ * the same secret that signs one. On the server that is fine — the worker holds
+ * `LICENSE_SECRET` and buyers never see it. On the CLI it is not, and the
+ * consequence was that a buyer who paid and followed the instructions got the
+ * free tier, because the published package quite correctly ships no secret.
+ * The only way to make it work was to hand every buyer the key-minting secret.
+ *
+ * `CTB2` keys are Ed25519-signed. The private half stays with the seller; the
+ * public half is a constant below and ships in the package, where it lets
+ * anyone verify a key and nobody mint one. Ed25519 rather than ECDSA because
+ * its signatures are deterministic, which is what lets a buyer who lost their
+ * key be sent the identical one rather than a second live key for one sale.
+ *
+ * Both are verified here: `CTB1` wherever a secret is configured, so existing
+ * keys and the worker keep working, and `CTB2` everywhere.
  */
 
 const PREFIX = 'CTB1';
+const PREFIX_V2 = 'CTB2';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+/**
+ * The public half of the signing key, as the `x` value of an Ed25519 JWK.
+ *
+ * Safe to publish — that is the entire point. Generate a pair with
+ * `node scripts/issue-key.mjs --keygen`, which writes the private half to
+ * `license.private.json` (gitignored) and prints the line to paste here.
+ *
+ * Empty means no pair has been generated yet, and every `CTB2` key is refused
+ * with `no_public_key_configured` rather than silently accepted.
+ */
+export const LICENSE_PUBLIC_KEY = '';
+
+/** Ed25519 across Node, workerd, Deno and Bun. Null if the runtime lacks it. */
+async function ed25519Key(jwk, usage) {
+  try {
+    return await crypto.subtle.importKey('jwk', jwk, { name: 'Ed25519' }, false, [usage]);
+  } catch {
+    return null;
+  }
+}
+
+const publicJwk = (x) => ({ kty: 'OKP', crv: 'Ed25519', x, ext: true, key_ops: ['verify'] });
 
 /**
  * Key ids revoked after a refund or a public leak.
@@ -65,7 +107,7 @@ async function hmacKey(secret) {
  * Issue a key.
  * `days: 0` mints a lifetime key, which is what a one-time purchase gets.
  */
-export async function issueKey({ email, plan = 'pro', days = 365, seats = 1, secret, id }) {
+export async function issueKey({ email, plan = 'pro', days = 365, seats = 1, secret, privateKey, id }) {
   const now = Math.floor(Date.now() / 1000);
   const payload = {
     v: 1,
@@ -80,7 +122,7 @@ export async function issueKey({ email, plan = 'pro', days = 365, seats = 1, sec
     x: days === 0 ? 0 : now + Math.round(days * 86400),
   };
 
-  return { key: await keyFromPayload(payload, secret), payload };
+  return { key: await keyFromPayload(payload, { secret, privateKey }), payload };
 }
 
 /**
@@ -90,10 +132,29 @@ export async function issueKey({ email, plan = 'pro', days = 365, seats = 1, sec
  * back rather than a second live key for one purchase — which would otherwise
  * accumulate keys that can never be revoked as a set.
  */
-export async function keyFromPayload(payload, secret) {
+export async function keyFromPayload(payload, signer) {
+  // Accepts a bare secret for callers that predate CTB2, so nothing that used
+  // to sign an HMAC key silently starts producing a format it cannot verify.
+  const { secret, privateKey } = typeof signer === 'string' ? { secret: signer } : (signer || {});
   const body = toBase64Url(encoder.encode(JSON.stringify(payload)));
+
+  if (privateKey) {
+    const key = await ed25519Key(privateKey, 'sign');
+    if (!key) throw new Error('This runtime has no Ed25519 support, so CTB2 keys cannot be signed here.');
+    const signature = await crypto.subtle.sign('Ed25519', key, encoder.encode(`${PREFIX_V2}.${body}`));
+    return `${PREFIX_V2}.${body}.${toBase64Url(new Uint8Array(signature))}`;
+  }
+
   const signature = await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(`${PREFIX}.${body}`));
   return `${PREFIX}.${body}.${toBase64Url(new Uint8Array(signature).slice(0, 24))}`;
+}
+
+/** Generate a signing pair. The private half never leaves the seller. */
+export async function generateSigningPair() {
+  const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+  const privateKey = await crypto.subtle.exportKey('jwk', pair.privateKey);
+  const publicKey = await crypto.subtle.exportKey('jwk', pair.publicKey);
+  return { privateKey, publicKey, publicX: publicKey.x };
 }
 
 /**
@@ -106,7 +167,9 @@ export async function verifyKey(key, secret, options = {}) {
   if (!raw) return { valid: false, reason: 'missing' };
 
   const parts = raw.split('.');
-  if (parts.length !== 3 || parts[0] !== PREFIX) return { valid: false, reason: 'malformed' };
+  if (parts.length !== 3 || (parts[0] !== PREFIX && parts[0] !== PREFIX_V2)) {
+    return { valid: false, reason: 'malformed' };
+  }
 
   let payload;
   try {
@@ -116,13 +179,33 @@ export async function verifyKey(key, secret, options = {}) {
   }
 
   let signatureOk = false;
-  try {
-    const expected = await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(`${PREFIX}.${parts[1]}`));
-    const truncated = toBase64Url(new Uint8Array(expected).slice(0, 24));
-    // Both sides are fixed-length derived values; compare without early exit.
-    signatureOk = timingSafeEqual(truncated, parts[2]);
-  } catch {
-    return { valid: false, reason: 'verify_failed' };
+  if (parts[0] === PREFIX_V2) {
+    // The public key is compiled in, so this path needs nothing configured and
+    // works in the published package — which is the whole reason it exists.
+    const x = options.publicKey || LICENSE_PUBLIC_KEY;
+    if (!x) return { valid: false, reason: 'no_public_key_configured', payload };
+    try {
+      const key = await ed25519Key(publicJwk(x), 'verify');
+      if (!key) return { valid: false, reason: 'ed25519_unsupported', payload };
+      signatureOk = await crypto.subtle.verify(
+        'Ed25519',
+        key,
+        fromBase64Url(parts[2]),
+        encoder.encode(`${PREFIX_V2}.${parts[1]}`),
+      );
+    } catch {
+      return { valid: false, reason: 'verify_failed', payload };
+    }
+  } else {
+    if (!secret) return { valid: false, reason: 'no_secret_configured', payload };
+    try {
+      const expected = await crypto.subtle.sign('HMAC', await hmacKey(secret), encoder.encode(`${PREFIX}.${parts[1]}`));
+      const truncated = toBase64Url(new Uint8Array(expected).slice(0, 24));
+      // Both sides are fixed-length derived values; compare without early exit.
+      signatureOk = timingSafeEqual(truncated, parts[2]);
+    } catch {
+      return { valid: false, reason: 'verify_failed' };
+    }
   }
   if (!signatureOk) return { valid: false, reason: 'bad_signature' };
 
@@ -156,7 +239,9 @@ function timingSafeEqual(a, b) {
 /** Resolve the tier for a request, given an optional key. */
 export async function tierFor(key, secret, options = {}) {
   if (!key) return { tier: 'free', license: null };
-  if (!secret) return { tier: 'free', license: { valid: false, reason: 'no_secret_configured' } };
+  // No early return on a missing secret: a CTB2 key needs no secret, and
+  // refusing it here was exactly the bug — a buyer with a valid key and a
+  // correctly secret-free install was told the key was not accepted.
   const license = await verifyKey(key, secret, options);
   return { tier: license.valid && license.plan !== 'free' ? 'pro' : 'free', license };
 }
