@@ -157,7 +157,35 @@ function checkAccess(ctx) {
   }
 
   // 2. robots.txt policy per AI crawler — the single biggest lever.
-  if (!robots.found) {
+  //
+  // "We asked and there is none" and "we could not ask" are different facts,
+  // and only the first supports a conclusion. Reporting a failed fetch as an
+  // absent file told a client "you are not blocked" about a site that might be
+  // blocking every crawler this product exists to check — and the crawler
+  // matrix, the headline table, came back empty with no explanation. A DNS
+  // blip, a timeout or a WAF is enough to produce it.
+  const robotsUnreachable = !robots.found && !robots.status;
+  if (robotsUnreachable) {
+    ctx.robotsUnreachable = true;
+    out.push(
+      finding({
+        id: 'robots-unreachable',
+        category: 'access',
+        severity: 'medium',
+        title: 'robots.txt could not be fetched, so crawler access is unverified',
+        detail:
+          'The request for robots.txt failed rather than returning "not found", so this report cannot say which AI crawlers are allowed — the single thing it weighs most heavily. Treat the crawler section as missing, not as clear.',
+        evidence: `${robots.url || '/robots.txt'} → ${robots.error || 'no response'}`,
+        impact: 'Unknown. If the file exists and disallows the citation crawlers, this page is invisible to those engines and nothing here would show it.',
+        fix: 'Re-run the audit. If it keeps failing, fetch the file yourself — a firewall or bot rule that blocks this check may be blocking answer-engine crawlers too.',
+        // Scored as the absent case rather than as a failure: the site should
+        // not lose points for our network, and must not gain a clean bill for
+        // it either, which is why this is a finding and not a pass.
+        earned: 8,
+        max: 10,
+      }),
+    );
+  } else if (!robots.found) {
     out.push(
       finding({
         id: 'robots-missing',

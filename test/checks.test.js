@@ -575,3 +575,71 @@ test('a variant canonical explains itself rather than just passing', () => {
   assert.match(finding.detail, /consolidates/);
   assert.match(finding.detail, /expected setup/);
 });
+
+/* ------------------------------------- a failed check is not a clean result */
+
+/**
+ * "We asked and there is none" and "we could not ask" are different facts, and
+ * only the first supports a conclusion. A failed robots.txt fetch was reported
+ * as an absent file, so a transient DNS blip, timeout or bot-rule made the
+ * report tell a client "you are not blocked" about a site that might be
+ * blocking every crawler this product exists to check — and the crawler table,
+ * the headline of the whole thing, came back empty with no explanation.
+ */
+const auditWith = async (robotsBehaviour) => {
+  const { auditUrl } = await import('../src/core/audit.js');
+  const body = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>A guide to widget upkeep</title></head>'
+    + `<body><main><h1>Widgets</h1><p>${'Body copy about widgets. '.repeat(60)}</p></main></body></html>`;
+  return auditUrl('https://acme.test/page', {
+    tier: 'pro',
+    fetchOptions: {
+      fetchImpl: async (url) => {
+        const target = String(url);
+        if (target.endsWith('/robots.txt')) return robotsBehaviour();
+        if (target.endsWith('/llms.txt') || target.endsWith('/sitemap.xml')) return new Response('', { status: 404 });
+        return new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+      },
+    },
+  });
+};
+
+const failFetch = () => {
+  throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+};
+
+test('an unfetchable robots.txt is reported as unverified, not as absent', async () => {
+  const result = await auditWith(failFetch);
+  const finding = result.issues.find((issue) => issue.id === 'robots-unreachable');
+
+  assert.ok(finding, 'a failed fetch must produce its own finding');
+  assert.match(finding.title, /could not be fetched/);
+  assert.doesNotMatch(finding.detail, /you are not blocked/, 'it must not conclude anything about access');
+  assert.equal(result.issues.some((issue) => issue.id === 'robots-missing'), false);
+});
+
+test('a genuinely absent robots.txt still reports as absent', async () => {
+  // The fix must not turn every 404 into an alarm — that is the common, benign
+  // case and the advice for it is different.
+  const result = await auditWith(() => new Response('', { status: 404 }));
+  assert.ok(result.issues.some((issue) => issue.id === 'robots-missing'));
+  assert.equal(result.issues.some((issue) => issue.id === 'robots-unreachable'), false);
+});
+
+test('no report claims nothing is blocked when the check did not run', async () => {
+  // The HTML report's empty-table branch said "No robots.txt was found, so
+  // nothing is blocked — every crawler may fetch this page." In a client
+  // deliverable that is a false assurance about the thing being bought.
+  const { renderHtml, renderMarkdown } = await import('../src/core/report.js');
+  const unreachable = await auditWith(failFetch);
+
+  assert.equal(unreachable.crawlers.length, 0, 'the fixture must produce an empty matrix');
+  for (const render of [renderHtml, renderMarkdown]) {
+    const output = render(unreachable);
+    assert.doesNotMatch(output, /so nothing is blocked/, 'must not assert the site is unblocked');
+    assert.match(output, /Not determined/, 'and must say the check did not run');
+  }
+
+  // The benign case keeps its plain-language answer.
+  const absent = await auditWith(() => new Response('', { status: 404 }));
+  assert.match(renderMarkdown(absent), /nothing is blocked/);
+});

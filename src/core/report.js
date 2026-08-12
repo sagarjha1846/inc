@@ -49,6 +49,18 @@ const BAR_WIDTH = 24;
  * result that predates the field — an older `--baseline` file, or a caller that
  * assembled `issues` without ranking them.
  */
+/**
+ * Whether the crawler table is absent because there is nothing to block, or
+ * because the check could not be run.
+ *
+ * The distinction is the whole point. With no table, the HTML report used to
+ * state "No robots.txt was found, so nothing is blocked — every crawler may
+ * fetch this page." When the fetch had merely failed, that is a false
+ * assurance about the one thing this report is bought to establish.
+ */
+const crawlersUnverified = (result) =>
+  (result.issues || []).some((issue) => issue.id === 'robots-unreachable');
+
 function pointsFor(issue) {
   if (Number.isFinite(issue.points)) return issue.points;
   return Math.round((issue.max - issue.earned) * 10) / 10;
@@ -87,9 +99,20 @@ export function renderMarkdown(result, options = {}) {
   }
   lines.push('');
 
-  if (result.crawlers && result.crawlers.length) {
-    lines.push('## Which AI engines can reach this page');
+  lines.push('## Which AI engines can reach this page');
+  lines.push('');
+  if (!result.crawlers || !result.crawlers.length) {
+    // Silently dropping the headline table is how an unfetchable robots.txt
+    // read as a clean report: the section that would have said "unknown"
+    // simply was not there, and nothing in the document mentioned it.
+    lines.push(
+      crawlersUnverified(result)
+        ? '**Not determined.** robots.txt could not be read, so this table would be a guess. If the file exists and disallows the citation crawlers, this page is invisible to those engines and nothing above would show it.'
+        : 'No robots.txt was found, so nothing is blocked — every crawler may fetch this page.',
+    );
     lines.push('');
+  }
+  if (result.crawlers && result.crawlers.length) {
     lines.push('| Crawler | Surface | Purpose | Status |');
     lines.push('| --- | --- | --- | --- |');
     for (const crawler of result.crawlers) {
@@ -449,7 +472,11 @@ ${crawlerRows}
     </tbody>
   </table></div>`
       : `<h2>Which AI engines can reach this page</h2>
-  <p class="lede">No robots.txt was found, so nothing is blocked — every crawler may fetch this page.</p>`
+  <p class="lede">${
+    crawlersUnverified(result)
+      ? '<strong>Not determined.</strong> robots.txt could not be read, so this table would be a guess. If the file exists and disallows the citation crawlers, this page is invisible to those engines and nothing above would show it.'
+      : 'No robots.txt was found, so nothing is blocked — every crawler may fetch this page.'
+  }</p>`
   }
 
   <h2>Findings${result.tier === 'free' ? ` — top ${result.issues.length}` : ''}</h2>
