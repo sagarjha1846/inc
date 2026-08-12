@@ -137,7 +137,17 @@ Stating this plainly, because a plan that only lists upside is not a plan:
    live at sagarjha1846.github.io/inc and the CLI installs from the repository, so the
    product is reachable today; the Worker adds the hosted audit endpoint, and npm makes
    `npx citable` work.
-2. Set up a checkout link and put its URL in `wrangler.toml`.
+2. Set up a checkout link. Put its URL in `wrangler.toml` for the Worker, and in a
+   repository variable named `CITABLE_CHECKOUT_URL` for the static site — the site
+   build reads it from the environment, so this is a settings change rather than a
+   commit, and the buy buttons switch from "Request a Pro key" to a live checkout the
+   next time the site deploys.
+
+   Until then the buttons open a pre-filled issue on this repository carrying the site
+   to audit and an address to send the key to, which is enough to fulfil a sale by
+   hand with `scripts/issue-key.mjs`. That is deliberately not a substitute for
+   checkout — every manual step costs conversions — but it means a visitor who wants
+   to buy today can say so, rather than clicking a button that cannot take money.
 3. Run the audit across 100 well-known sites, write up what you find, publish it.
 4. Offer free audits to the first ~20 people who engage with that post.
 5. Convert the ones with real problems into done-for-you engagements.
