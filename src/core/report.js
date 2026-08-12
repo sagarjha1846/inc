@@ -39,6 +39,22 @@ function fenced(text, info = '') {
 
 const BAR_WIDTH = 24;
 
+/**
+ * The points a finding recovers, as printed in a client's report.
+ *
+ * `max - earned` is the gap in the category's own units, which is a different
+ * number: each category is normalised to its weight, so one unit is worth
+ * `weight / available` points. `prioritize` computes the real figure and puts
+ * it on the finding; this prefers that, falling back to the gap only for a
+ * result that predates the field — an older `--baseline` file, or a caller that
+ * assembled `issues` without ranking them.
+ */
+function pointsFor(issue) {
+  if (Number.isFinite(issue.points)) return issue.points;
+  return Math.round((issue.max - issue.earned) * 10) / 10;
+}
+
+
 function bar(ratio) {
   const filled = Math.round(Math.max(0, Math.min(1, ratio)) * BAR_WIDTH);
   return `${'█'.repeat(filled)}${'░'.repeat(BAR_WIDTH - filled)}`;
@@ -101,7 +117,7 @@ export function renderMarkdown(result, options = {}) {
       lines.push(`**Fix:** ${issue.fix}`);
       lines.push('');
     }
-    lines.push(`*Recovers up to ${Math.round((issue.max - issue.earned) * 10) / 10} points.*`);
+    lines.push(`*Recovers up to ${pointsFor(issue)} points.*`);
     lines.push('');
   });
 
@@ -276,7 +292,7 @@ export function renderHtml(result, options = {}) {
     ${issue.evidence ? `<pre>${escapeHtml(String(issue.evidence).slice(0, 1200))}</pre>` : ''}
     ${issue.impact ? `<p class="meta"><strong>Costs you:</strong> ${escapeHtml(issue.impact)}</p>` : ''}
     ${issue.fix ? `<p class="meta fix"><strong>Fix:</strong> ${escapeHtml(issue.fix)}</p>` : ''}
-    <p class="points">Recovers up to ${Math.round((issue.max - issue.earned) * 10) / 10} points</p>
+    <p class="points">Recovers up to ${pointsFor(issue)} points</p>
   </section>`,
     )
     .join('\n');

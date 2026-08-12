@@ -103,3 +103,49 @@ test('every category the checks use is one the scorer knows about', () => {
   const total = Object.values(CATEGORIES).reduce((sum, meta) => sum + meta.weight, 0);
   assert.equal(total, 100, 'weights must sum to 100 or the headline is not a percentage');
 });
+
+test('the points a report prints are the points the finding is worth', async () => {
+  // Both renderers print "Recovers up to N points" into a document an agency
+  // hands a client. They computed N as `max - earned`, which is the gap in the
+  // category's own units — not points. A blocked-crawler finding worth 1.9
+  // points was printed as 2.
+  const { auditUrl } = await import('../src/core/audit.js');
+  const { renderMarkdown, renderHtml } = await import('../src/core/report.js');
+
+  const page = '<!doctype html><html lang="en"><head><title>Pricing for widgets</title></head>'
+    + `<body><main><h1>Pricing</h1><p>${'Body copy about pricing. '.repeat(40)}</p></main></body></html>`;
+  const result = await auditUrl('https://acme.test/pricing', {
+    tier: 'pro',
+    fetchOptions: {
+      fetchImpl: async (url) => new Response(
+        String(url).endsWith('/robots.txt')
+          ? 'User-agent: OAI-SearchBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n'
+          : page,
+        {
+          status: 200,
+          headers: { 'content-type': String(url).endsWith('.txt') ? 'text/plain' : 'text/html; charset=utf-8' },
+        },
+      ),
+    },
+  });
+
+  // The fixture is chosen so at least one finding's points differ from its gap;
+  // without that this test would pass on the broken code too.
+  const differing = result.issues.find((issue) => Math.abs(issue.points - (issue.max - issue.earned)) > 0.05);
+  assert.ok(differing, 'fixture must produce a finding whose points differ from its raw gap');
+
+  const markdown = renderMarkdown(result);
+  const html = renderHtml(result);
+  assert.ok(
+    markdown.includes(`Recovers up to ${differing.points} points`),
+    `markdown should print ${differing.points}, not the raw gap ${differing.max - differing.earned}`,
+  );
+  assert.ok(
+    html.includes(`Recovers up to ${differing.points} points`),
+    `html should print ${differing.points}, not the raw gap ${differing.max - differing.earned}`,
+  );
+
+  // Deliberately not asserting the gap figure is absent anywhere: another
+  // finding can legitimately be worth exactly that many points, and the string
+  // would then appear for a good reason.
+});
