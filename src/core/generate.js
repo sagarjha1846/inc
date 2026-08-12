@@ -161,6 +161,36 @@ function toEmbeddedJson(payload) {
  * A JSON-LD block for the page, reusing whatever is already declared so the
  * output is a merge rather than a replacement.
  */
+/**
+ * A publication date the page itself asserts, if it has one.
+ *
+ * Falling back to today is what the generator used to do unconditionally, and
+ * a date does not look like a placeholder the way CHANGE-ME does — so nobody
+ * corrected it, and the pasted markup told every engine the page was published
+ * on the day it happened to be audited. For a tool that tells people engines
+ * weigh freshness, inventing a freshness signal is the wrong default.
+ */
+const todaysDate = () => new Date().toISOString().slice(0, 10);
+
+function declaredDate(ctx) {
+  const fromMeta =
+    meta(ctx.html, 'article:published_time') ||
+    meta(ctx.html, 'article:modified_time') ||
+    meta(ctx.html, 'og:updated_time') ||
+    meta(ctx.html, 'date');
+  const fromSchema = flattenJsonLd(jsonLdBlocks(ctx.html))
+    .map((node) => node.datePublished || node.dateModified || node.dateCreated)
+    .find((value) => typeof value === 'string' && value);
+  const fromHeader = ctx.page && ctx.page.headers && ctx.page.headers['last-modified'];
+
+  for (const candidate of [fromMeta, fromSchema, fromHeader]) {
+    if (!candidate) continue;
+    const parsed = new Date(candidate);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
 export function generateJsonLd(ctx) {
   const url = new URL(ctx.url);
   const existing = flattenJsonLd(jsonLdBlocks(ctx.html));
@@ -171,6 +201,7 @@ export function generateJsonLd(ctx) {
   const pageTitle = extractTitle(ctx.html) || url.pathname;
   const description = meta(ctx.html, 'description') || (ctx.text || '').slice(0, 200).replace(/\s+/g, ' ');
   const siteName = meta(ctx.html, 'og:site_name') || url.hostname.replace(/^www\./, '');
+  const pageDate = declaredDate(ctx);
   const graph = [];
 
   if (!existingTypes.has('organization') && !existingTypes.has('person') && !existingTypes.has('localbusiness')) {
@@ -195,8 +226,8 @@ export function generateJsonLd(ctx) {
       description,
       url: ctx.url,
       mainEntityOfPage: { '@id': ctx.url },
-      datePublished: new Date().toISOString().slice(0, 10),
-      dateModified: new Date().toISOString().slice(0, 10),
+      datePublished: pageDate ?? todaysDate(),
+      dateModified: pageDate ?? todaysDate(),
       author: { '@type': 'Person', name: 'CHANGE-ME' },
       publisher: { '@id': `${url.origin}/#organization` },
       inLanguage: 'en',
@@ -210,7 +241,9 @@ export function generateJsonLd(ctx) {
   const payload = { '@context': 'https://schema.org', '@graph': graph };
   const json = toEmbeddedJson(payload);
   return {
-    note: 'Paste inside <head>. Replace every CHANGE-ME before shipping.',
+    note: pageDate
+      ? 'Paste inside <head>. Replace every CHANGE-ME before shipping.'
+      : 'Paste inside <head>. Replace every CHANGE-ME before shipping — and set datePublished and dateModified, which default to today because this page declares no date of its own.',
     json,
     markup: `<script type="application/ld+json">\n${json}\n</script>`,
   };

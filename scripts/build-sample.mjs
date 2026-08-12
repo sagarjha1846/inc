@@ -105,11 +105,35 @@ const sanitized = JSON.parse(
     .join('northwind.example'),
 );
 
+// Anything measured rather than derived has to be pinned, or the committed
+// sample differs on every rebuild and a drift check cannot tell a real change
+// from the clock and the calendar moving. Two things vary: the generated
+// JSON-LD falls back to today's date when a page declares none, and the
+// response time is quoted inside a finding's own text as well as in the http
+// block.
+const PINNED_DATE = '2026-01-01';
+const PINNED_MS = 214;
+for (const block of ['jsonLd', 'faqSchema']) {
+  const generated = sanitized.generated?.[block];
+  if (!generated) continue;
+  for (const field of ['json', 'markup']) {
+    if (typeof generated[field] === 'string') {
+      generated[field] = generated[field].replace(/"(datePublished|dateModified)": "\d{4}-\d{2}-\d{2}"/g, `"$1": "${PINNED_DATE}"`);
+    }
+  }
+}
+
+for (const finding of [...(sanitized.issues || []), ...(sanitized.passes || [])]) {
+  if (typeof finding.detail === 'string') {
+    finding.detail = finding.detail.replace(/Served in \d+ms/, `Served in ${PINNED_MS}ms`);
+  }
+}
+
 sanitized.url = 'https://northwind.example/pricing';
 sanitized.requestedUrl = sanitized.url;
 sanitized.fetchedAt = '2026-01-01T00:00:00.000Z';
 sanitized.elapsedMs = 842;
-sanitized.http.responseMs = 214;
+sanitized.http.responseMs = PINNED_MS;
 
 const remaining = JSON.stringify(sanitized).match(/127\.0\.0\.1|localhost/g);
 if (remaining) {

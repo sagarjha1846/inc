@@ -132,3 +132,35 @@ test('the sample score is consistent with its own category totals', () => {
     `sample score ${SAMPLE_RESULT.score} does not match its categories (${summed})`,
   );
 });
+
+test('the committed demo matches what the generator produces today', async () => {
+  // The demo on the live site is committed output. If the checks change and
+  // nobody reruns the builder, the shop window shows a report the product can
+  // no longer produce — and there is no signal, because the file still parses
+  // and still renders.
+  const { execFile } = await import('node:child_process');
+  const { readFile, writeFile } = await import('node:fs/promises');
+  const { fileURLToPath } = await import('node:url');
+
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const samplePath = new URL('../src/worker/sample.js', import.meta.url);
+  const committed = await readFile(samplePath, 'utf8');
+
+  try {
+    await new Promise((resolve, reject) => {
+      execFile(process.execPath, ['scripts/build-sample.mjs'], { cwd: root }, (error) =>
+        error ? reject(error) : resolve(),
+      );
+    });
+    const rebuilt = await readFile(samplePath, 'utf8');
+    assert.equal(
+      rebuilt,
+      committed,
+      'src/worker/sample.js is out of date — run `node scripts/build-sample.mjs` and commit the result',
+    );
+  } finally {
+    // Restore whatever was committed, so a failure here does not also leave a
+    // modified file behind for the next thing that reads it.
+    await writeFile(samplePath, committed, 'utf8');
+  }
+});

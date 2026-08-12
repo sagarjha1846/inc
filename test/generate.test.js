@@ -275,3 +275,55 @@ test('ordinary metadata is passed through unchanged', () => {
   assert.match(llms, /^# Acme Widgets$/m);
   assert.match(llms, /^> A practical explanation of what widgets are and how to choose between them\.$/m);
 });
+
+/* ------------------------------------------------------ generated dates */
+
+test('the generator uses a date the page actually declares', () => {
+  // A date does not look like a placeholder the way CHANGE-ME does, so an
+  // invented one gets pasted and shipped. Where the page states a date, that
+  // is the one to carry through.
+  // Only metadata cases here: a page that already declares an Article gets no
+  // generated Article at all, which is the intended merge behaviour and is
+  // asserted separately.
+  for (const [label, head] of [
+    ['article:published_time', '<meta property="article:published_time" content="2019-04-05T10:00:00Z">'],
+    ['article:modified_time', '<meta property="article:modified_time" content="2019-04-05T10:00:00Z">'],
+    ['og:updated_time', '<meta property="og:updated_time" content="2019-04-05T10:00:00Z">'],
+  ]) {
+    const html = `<!doctype html><html lang="en"><head><title>A page about widgets</title>${head}</head>
+<body><main><h1>W</h1><p>${PROSE}</p></main></body></html>`;
+    const { json, note } = generateJsonLd(context(html));
+    const article = JSON.parse(json)['@graph'].find((node) => node['@type'] === 'Article');
+    assert.equal(article.datePublished, '2019-04-05', label);
+    assert.doesNotMatch(note, /default to today/, `${label}: no warning is needed when a real date was found`);
+  }
+});
+
+test('a Last-Modified header counts as a declared date', () => {
+  const html = `<!doctype html><html lang="en"><head><title>A page about widgets</title></head>
+<body><main><h1>W</h1><p>${PROSE}</p></main></body></html>`;
+  const ctx = context(html);
+  ctx.page.headers['last-modified'] = 'Fri, 05 Apr 2019 10:00:00 GMT';
+  const article = JSON.parse(generateJsonLd(ctx).json)['@graph'].find((n) => n['@type'] === 'Article');
+  assert.equal(article.datePublished, '2019-04-05');
+});
+
+test('when no date exists the fallback is called out rather than left to pass as fact', () => {
+  const html = `<!doctype html><html lang="en"><head><title>A page about widgets</title></head>
+<body><main><h1>W</h1><p>${PROSE}</p></main></body></html>`;
+  const { json, note } = generateJsonLd(context(html));
+  const article = JSON.parse(json)['@graph'].find((node) => node['@type'] === 'Article');
+
+  assert.match(article.datePublished, /^\d{4}-\d{2}-\d{2}$/, 'the field still has to be valid');
+  assert.match(note, /datePublished and dateModified, which default to today/);
+});
+
+test('an unparseable date is ignored rather than emitted', () => {
+  const html = `<!doctype html><html lang="en"><head><title>A page about widgets</title>
+<meta property="article:published_time" content="last Tuesday-ish"></head>
+<body><main><h1>W</h1><p>${PROSE}</p></main></body></html>`;
+  const { json, note } = generateJsonLd(context(html));
+  const article = JSON.parse(json)['@graph'].find((node) => node['@type'] === 'Article');
+  assert.match(article.datePublished, /^\d{4}-\d{2}-\d{2}$/, 'garbage must not reach the output');
+  assert.match(note, /default to today/, 'and the fallback is disclosed');
+});
