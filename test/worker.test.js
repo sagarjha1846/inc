@@ -358,3 +358,44 @@ test('health reports the two licence halves separately', async () => {
   const bare = await (await worker.fetch(new Request('https://citable.test/api/health'), {})).json();
   assert.equal(bare.legacyKeysConfigured, false);
 });
+
+test('a configured checkout link cannot inject into the page it appears on', async () => {
+  // `priceUrl` and `requestUrl` went into the buy button's href raw, so a value
+  // carrying a quote broke out of the attribute and one starting `javascript:`
+  // armed the button with a script. Both come from configuration, which is not
+  // the same as trusted: the static build reads its value from a repository
+  // variable — settable by anyone with write access — and renders it to every
+  // visitor of the public landing page.
+  const attacks = [
+    'https://x/" onclick="alert(1)',
+    "https://x/' onmouseover='alert(1)",
+    'https://x/"><script>alert(1)</script><a href="',
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+  ];
+
+  for (const priceUrl of attacks) {
+    const html = renderApp({ priceUrl });
+    const tag = html.match(/<a class="cta"[^>]*>/);
+
+    assert.doesNotMatch(html, /<script>alert/, `${priceUrl}: script tag injected`);
+    if (!tag) continue; // Rejected outright and rendered as unconfigured, which is fine.
+
+    // Exploitable only if a raw quote escaped the attribute, or the scheme runs code.
+    assert.doesNotMatch(tag[0], /"[^>]*\s(on\w+|src)=/, `${priceUrl}: escaped the href attribute`);
+    const href = tag[0].match(/href="([^"]*)"/);
+    assert.doesNotMatch(href[1], /^(javascript|data|vbscript):/i, `${priceUrl}: dangerous scheme survived`);
+  }
+});
+
+test('a legitimate checkout link is untouched', async () => {
+  // The guard must not break the ordinary case: a hosted checkout URL with a
+  // query string, which is what every payment provider hands out.
+  const url = 'https://buy.stripe.com/test_abc123?client_reference_id=x&utm_source=citable';
+  const html = renderApp({ priceUrl: url });
+  assert.match(html, /<a class="cta" href="[^"]+">Get a Pro key<\/a>/);
+  // `&` is escaped for HTML, which is what an attribute needs; the link still resolves.
+  const href = html.match(/<a class="cta" href="([^"]+)"/)[1];
+  assert.equal(href.replace(/&amp;/g, '&'), url);
+});

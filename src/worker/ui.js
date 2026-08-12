@@ -10,6 +10,37 @@
 import { AI_CRAWLERS } from '../core/robots.js';
 
 /**
+ * A URL safe to put in an `href`, or null.
+ *
+ * `priceUrl` and `requestUrl` were interpolated raw into the buy button's
+ * attribute, so a value carrying a quote broke out of it and one starting
+ * `javascript:` armed the button with a script. Both arrive from configuration
+ * — `CHECKOUT_URL` on the Worker, a repository variable on the static build —
+ * which is not the same as trusted: a repository variable can be set by anyone
+ * with write access, and the result is served to every visitor of the public
+ * landing page.
+ *
+ * Only absolute http(s) and same-document links are accepted. Anything else is
+ * treated as no link at all, which the caller already handles, rather than
+ * being escaped into something that renders but cannot work.
+ */
+function safeLink(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  if (raw.startsWith('#') || raw.startsWith('/') || raw.startsWith('./')) return escapeAttr(raw);
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return escapeAttr(url.toString());
+  } catch {
+    return null;
+  }
+}
+
+const ATTR_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeAttr = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ATTR_ESCAPES[char]);
+
+/**
  * @param {object} options
  * @param {string} [options.priceUrl]   A real checkout link. Buys immediately.
  * @param {string} [options.requestUrl] Where to send someone who wants to buy
@@ -39,12 +70,12 @@ export function renderApp({
   // lead somewhere that takes money, and one that leads somewhere else has to
   // say what it actually does.
   const usable = (value) => Boolean(value) && value !== '#pricing' && !/CHANGE-ME/i.test(value);
-  const checkoutReady = usable(priceUrl);
-  const canRequest = !checkoutReady && usable(requestUrl);
+  const checkoutHref = usable(priceUrl) ? safeLink(priceUrl) : null;
+  const requestHref = !checkoutHref && usable(requestUrl) ? safeLink(requestUrl) : null;
 
   const buyButton = (label, requestLabel) => {
-    if (checkoutReady) return `<a class="cta" href="${priceUrl}">${label}</a>`;
-    if (canRequest) return `<a class="cta cta-request" href="${requestUrl}">${requestLabel}</a>`;
+    if (checkoutHref) return `<a class="cta" href="${checkoutHref}">${label}</a>`;
+    if (requestHref) return `<a class="cta cta-request" href="${requestHref}">${requestLabel}</a>`;
     return `<span class="cta cta-disabled" role="note">Checkout not configured</span>`;
   };
   return `<!doctype html>
