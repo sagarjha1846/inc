@@ -286,6 +286,15 @@ export async function fetchPage(input, options = {}) {
         } catch {
           throw new FetchError(`Redirect to an unparseable location: ${location}`, 'bad_redirect');
         }
+        // The scheme is re-checked, not just the host. `normalizeUrl` enforces
+        // http(s) on the way in, but a redirect can leave that world entirely:
+        // a `data:` location was followed, and its payload became the audited
+        // page — content that never came from a web server, judged as though
+        // it had. Schemes without a host also slip the private-host check
+        // below, since there is no hostname to test.
+        if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+          throw new FetchError(`Redirect left http(s): ${next.protocol}`, 'bad_redirect');
+        }
         if (!allowPrivate && isPrivateHost(next.hostname)) {
           throw new FetchError(`Redirect pointed at a private host: ${next.hostname}`, 'private_host');
         }

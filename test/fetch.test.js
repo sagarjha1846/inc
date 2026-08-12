@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isPrivateHost, normalizeUrl, siteIdentity } from '../src/core/fetch.js';
+import { fetchPage, isPrivateHost, normalizeUrl, siteIdentity } from '../src/core/fetch.js';
 
 const blocked = (url) => {
   try {
@@ -150,4 +150,47 @@ test('site identity treats an address literal as an address, not a domain', () =
 
   // A trailing dot is the same host, and case is not part of identity.
   assert.equal(siteIdentity('Example.COM.'), siteIdentity('example.com'));
+});
+
+test('a redirect cannot leave http(s)', async (t) => {
+  // normalizeUrl enforces the scheme on the way in, but a redirect can leave
+  // that world entirely. A `data:` location was followed and its payload became
+  // the audited page — content that never came from a web server, scored as
+  // though it had. Schemes with no host also slip the private-host check, since
+  // there is no hostname left to test.
+  const http = await import('node:http');
+  const server = http.createServer((req, res) => {
+    res.writeHead(302, { location: decodeURIComponent(req.url.slice(1)) });
+    res.end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  for (const target of ['data:text/html,<h1>x</h1>', 'file:///etc/passwd', 'javascript:alert(1)']) {
+    await assert.rejects(
+      () => fetchPage(`http://127.0.0.1:${port}/${encodeURIComponent(target)}`, { allowPrivate: true }),
+      /Redirect left http\(s\)/,
+      `${target} should be refused at the redirect`,
+    );
+  }
+});
+
+test('an ordinary redirect between http and https still works', async (t) => {
+  // The guard above must not break the most common redirect on the web.
+  const http = await import('node:http');
+  const server = http.createServer((req, res) => {
+    if (req.url === '/start') {
+      res.writeHead(301, { location: `http://127.0.0.1:${server.address().port}/end` });
+      return res.end();
+    }
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<html><body>arrived</body></html>');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+
+  const result = await fetchPage(`http://127.0.0.1:${server.address().port}/start`, { allowPrivate: true });
+  assert.match(result.body, /arrived/);
+  assert.equal(result.redirects.length, 1);
 });
