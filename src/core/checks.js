@@ -21,6 +21,7 @@ import {
   links as extractLinks,
   meta,
   metaTags,
+  strandedProse,
   title as extractTitle,
   visibleText,
   wordCount,
@@ -516,21 +517,47 @@ function checkContent(ctx) {
   const depthScore =
     contentWords >= 900 ? 6 : contentWords >= 500 ? 5 : contentWords >= 300 ? 3.5 : contentWords >= 150 ? 2 : 0;
   const chromeWords = words - contentWords;
+
+  // A low count has two causes that call for opposite fixes, and the number
+  // alone cannot tell them apart. Either the page really is thin, or it has the
+  // prose and put it somewhere extractors discard — a hero paragraph inside
+  // `<header>`, a summary in an `<aside>`. Telling the second author to "expand
+  // the page" is worse than useless: they write more copy into the same
+  // excluded element, nothing changes, and the tool looks broken.
+  //
+  // Paragraphs outside the content region are the evidence for the second case.
+  // They are counted rather than inferred from the chrome total, because most
+  // excluded words on a normal page are navigation, which nobody should move.
+  const strandedWords = strandedProse(html, contentHtml);
+  const misplaced = contentWords < 500 && strandedWords >= 80;
+  // Whether moving it is enough on its own, or only the first of two steps.
+  const enoughOnceMoved = contentWords + strandedWords >= 500;
+
   out.push(
     finding({
       id: 'content-depth',
       category: 'content',
       severity: contentWords >= 500 ? 'pass' : contentWords >= 300 ? 'low' : 'medium',
-      title: `${contentWords} words of readable content`,
+      title: misplaced
+        ? `${contentWords} words of readable content, with ${strandedWords} more outside it`
+        : `${contentWords} words of readable content`,
       detail:
         contentWords >= 500
           ? 'Enough depth for an engine to extract a specific answer rather than a vague summary.'
-          : 'Pages cited by answer engines skew long because depth gives the model more extractable claims. This page gives it little to work with.',
+          : misplaced
+            ? `The prose exists — ${strandedWords} words of it sit in a <header> or <aside>, which extractors treat as site furniture and discard. Only the ${contentWords} words inside the content region are read as this page's answer.`
+            : 'Pages cited by answer engines skew long because depth gives the model more extractable claims. This page gives it little to work with.',
       evidence:
         chromeWords > contentWords
           ? `${contentWords} words in the page's own content; ${chromeWords} more are navigation, header or footer, which repeat on every page and are not counted.`
           : null,
-      fix: contentWords >= 500 ? null : 'Expand the page with specifics: definitions, numbers, steps, comparisons, and edge cases.',
+      fix: contentWords >= 500
+        ? null
+        : misplaced
+          ? `Move those paragraphs inside <main> or <article>${
+            enoughOnceMoved ? '' : ', then expand the page with specifics: definitions, numbers, steps and comparisons'
+          }. Writing more copy into <header> or <aside> will not change what an engine reads.`
+          : 'Expand the page with specifics: definitions, numbers, steps, comparisons, and edge cases.',
       earned: depthScore,
       max: 6,
     }),

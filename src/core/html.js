@@ -310,6 +310,57 @@ export function countTag(html, tagName) {
 }
 
 /**
+ * Words of paragraph prose in a fragment.
+ *
+ * Counting `<p>` alone is the point. Comparing a page's total word count with
+ * its content-region count says how many words were excluded, but not whether
+ * losing them was a mistake: a navigation menu and a stranded intro paragraph
+ * are both "excluded words", and the advice they call for is opposite — one is
+ * correctly ignored, the other needs moving. Paragraphs are the narrowest thing
+ * that is reliably prose. Nav menus, breadcrumbs and footer link lists are
+ * marked up as lists and bare anchors, so they do not register here.
+ *
+ * List items are deliberately excluded even though some are prose, because the
+ * ones that are not are exactly the chrome this needs to ignore.
+ */
+export function paragraphWords(html) {
+  let total = 0;
+  for (const paragraph of findTags(html, 'p')) {
+    total += wordCount(visibleText(paragraph.inner));
+  }
+  return total;
+}
+
+/**
+ * Elements that hold prose an author probably meant as page content.
+ *
+ * `footer` and `nav` are absent on purpose. All four are excluded from the
+ * content region, but only these two are places a page's own substance
+ * plausibly ends up: a hero paragraph above the fold, a summary in a sidebar.
+ * A footer's prose is a copyright line or a company boilerplate blurb that
+ * genuinely does repeat site-wide — advising anyone to move it into `<main>`
+ * would be wrong, and wrong advice is worse than none.
+ */
+const STRANDABLE = ['header', 'aside'];
+
+/**
+ * Words of prose sitting outside the content region in a place that suggests
+ * misplacement rather than site furniture.
+ *
+ * Both arguments are measured the same way and subtracted, so a `<header>`
+ * nested *inside* `<main>` — an ordinary article header — counts in neither.
+ * What survives is prose the extractor discarded and the author probably
+ * wanted read.
+ */
+export function strandedProse(html, contentHtml) {
+  const inRegions = (fragment) => STRANDABLE.reduce(
+    (sum, tag) => sum + findTags(fragment, tag).reduce((n, el) => n + paragraphWords(el.inner), 0),
+    0,
+  );
+  return Math.max(0, inRegions(html) - inRegions(contentHtml));
+}
+
+/**
  * The markup for the page's own content, with site chrome removed.
  *
  * Navigation, footers and cookie banners are part of every page on a site, so

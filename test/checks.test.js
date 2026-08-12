@@ -469,6 +469,68 @@ test('a page that is entirely inside <nav> is not trimmed to nothing', () => {
   assert.notEqual(find(findings, 'content-depth').title, '0 words of readable content');
 });
 
+/* ------------------------------------------- prose in the wrong container */
+
+/**
+ * A low word count has two causes with opposite remedies, and the count alone
+ * cannot separate them: the page is thin, or the page has the prose and put it
+ * where extractors discard it. Advising the second author to "expand the page"
+ * sends them to write more copy into the same excluded element, which changes
+ * nothing — the score does not move and the tool looks broken.
+ */
+const HERO = `<p>${'Stale-while-revalidate serves the cached copy immediately and refreshes it in the background. '.repeat(12)}</p>`;
+const depth = (body) => find(check(page(body)).findings, 'content-depth');
+
+test('prose stranded outside the content region is named as such', () => {
+  const finding = depth(`<header><h1>Caching</h1>${HERO}</header><main><p>Short note.</p></main>`);
+
+  assert.match(finding.title, /more outside it/, 'the title should say the words exist');
+  assert.match(finding.detail, /<header> or <aside>/);
+  assert.match(finding.fix, /Move those paragraphs inside <main>/);
+  assert.doesNotMatch(finding.fix, /^Expand the page/, 'expanding is the wrong first move here');
+});
+
+test('the same prose inside <main> draws no placement advice', () => {
+  // The control: identical words, correct container. Only placement differs.
+  const finding = depth(`<main><h1>Caching</h1>${HERO}</main>`);
+  assert.doesNotMatch(finding.title, /outside it/);
+  assert.doesNotMatch(finding.fix || '', /Move those paragraphs/);
+});
+
+test('moving is the only step when it would be enough on its own', () => {
+  const long = `<p>${'Stale-while-revalidate serves the cached copy immediately and refreshes it later. '.repeat(60)}</p>`;
+  const finding = depth(`<header>${long}</header><main><h1>C</h1><p>Short.</p></main>`);
+  assert.match(finding.fix, /Move those paragraphs/);
+  assert.doesNotMatch(finding.fix, /then expand/, 'moving 600 words already clears the bar');
+});
+
+test('a footer blurb is not something to move into the content', () => {
+  // Footer prose is a copyright line or company boilerplate that genuinely does
+  // repeat site-wide. Telling anyone to move it into <main> would be wrong.
+  const finding = depth(`<main><h1>Caching</h1><p>Short.</p></main><footer>${HERO}</footer>`);
+  assert.doesNotMatch(finding.title, /outside it/);
+  assert.doesNotMatch(finding.fix || '', /Move those paragraphs/);
+});
+
+test('a navigation menu never reads as stranded prose', () => {
+  // Nav is the bulk of the excluded words on most pages, and none of it should
+  // be moved. Counting paragraphs rather than excluded words is what keeps it out.
+  const finding = depth(`${CHROME_NAV}<main>${ARTICLE}</main>${CHROME_FOOTER}`);
+  assert.doesNotMatch(finding.title, /outside it/);
+});
+
+test('an article header inside <main> is already being read', () => {
+  const finding = depth(`<main><article><header><h1>Caching</h1>${HERO}</header><p>More body copy.</p></article></main>`);
+  assert.doesNotMatch(finding.title, /outside it/, 'a header nested in the content region is not stranded');
+});
+
+test('a page with enough content says nothing about placement', () => {
+  const body = `<p>${'Caching decides what a server never computes twice, and the choice is about staleness. '.repeat(45)}</p>`;
+  const finding = depth(`<header>${HERO}</header><main><h1>Caching</h1>${body}</main>`);
+  assert.equal(finding.severity, 'pass');
+  assert.equal(finding.fix, null, 'a passing page needs no advice at all');
+});
+
 /* ----------------------------------------------- canonical URL relations */
 
 /** Run the canonical check for a page at `url` declaring `canonical`. */
