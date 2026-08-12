@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { AI_CRAWLERS } from '../src/core/robots.js';
@@ -196,4 +196,17 @@ test('no example invokes a command that is not installable yet', () => {
   // instruction.
   assert.doesNotMatch(readme, /^\s*npx citable\b/m, 'npx citable 404s until the package is published');
   assert.match(readme, /^## Install$/m, 'the README needs an install section for the bare command to make sense');
+});
+
+test('the pre-push hook is present, executable and documented', () => {
+  // It only helps if it is enabled, and it is only enabled if the README says
+  // how — hooks are not versioned, so a fresh clone has none.
+  const hook = new URL('../.githooks/pre-push', import.meta.url);
+  const source = readFileSync(hook, 'utf8');
+
+  assert.match(source, /node --test/, 'the hook should run the suite');
+  assert.match(source, /--no-verify/, 'the hook should say how to bypass it deliberately');
+  assert.ok(statSync(hook).mode & 0o111, 'the hook must be executable or git silently ignores it');
+
+  assert.match(readme, /git config core\.hooksPath \.githooks/, 'the README should say how to enable it');
 });

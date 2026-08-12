@@ -264,8 +264,15 @@ See [docs/DEPLOY.md](docs/DEPLOY.md) for the full walkthrough, and
 
 ## Development
 
+Enable the pre-push hook once per clone, so a red suite cannot reach the
+branch (hooks are not versioned, so cloning does not install it):
+
 ```bash
-node --test                    # 260 tests, no install step
+git config core.hooksPath .githooks
+```
+
+```bash
+node --test                    # 261 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# Refuse to push a branch whose tests do not pass.
+#
+# This exists because of a specific mistake: running the suite and pushing in
+# one chained command, then reading the "pushed" line without reading the test
+# result above it. The branch was broken for a commit. A person deciding to be
+# more careful does not survive the next long session; a hook does.
+#
+# Enable it once per clone — hooks are not versioned, so cloning does not
+# install this:
+#
+#   git config core.hooksPath .githooks
+#
+# Skip it deliberately when you need to (a work-in-progress branch, a push that
+# only touches documentation):
+#
+#   git push --no-verify
+#
+set -uo pipefail
+
+# Nothing to check when the push deletes a ref.
+if [ -t 0 ]; then
+  refs=""
+else
+  refs="$(cat)"
+fi
+if [ -n "$refs" ] && ! printf '%s\n' "$refs" | grep -qv '^.* 0\{40\} '; then
+  exit 0
+fi
+
+printf 'pre-push: running the test suite…\n' >&2
+
+if ! output="$(node --test 2>&1)"; then
+  printf '%s\n' "$output" | grep -E '^(not ok|# (tests|pass|fail))' >&2
+  cat >&2 <<'MESSAGE'
+
+pre-push: refusing to push — the suite is failing.
+
+Fix it, or push deliberately with:
+
+  git push --no-verify
+MESSAGE
+  exit 1
+fi
+
+printf 'pre-push: %s\n' "$(printf '%s\n' "$output" | grep -E '^# (tests|pass|fail)' | tr '\n' ' ')" >&2
+exit 0
