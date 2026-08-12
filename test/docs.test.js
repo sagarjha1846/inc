@@ -9,7 +9,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { AI_CRAWLERS } from '../src/core/robots.js';
 import { CATEGORIES } from '../src/core/checks.js';
@@ -46,21 +48,40 @@ test('the free-tier finding limit claimed in the README is the real one', () => 
   assert.equal(Number(claimed[1]), FREE_ISSUE_LIMIT);
 });
 
-test('the test count claimed in the README matches the suite', () => {
-  const files = readdirSync(new URL('../test/', import.meta.url)).filter((name) => name.endsWith('.test.js'));
-  let total = 0;
-  for (const name of files) {
-    const source = readFileSync(new URL(`../test/${name}`, import.meta.url), 'utf8');
-    total += (source.match(/^test\(/gm) || []).length;
-  }
+test('the test count claimed in the README matches the suite', { skip: process.env.CITABLE_COUNTING === '1' }, async () => {
+  // Counted by running the suite, not by grepping for `test(`.
+  //
+  // A static count is wrong the moment a file generates cases in a loop — the
+  // robustness suite declares twenty-one documents that way, and the grep sees
+  // one. It reported the README as overstating a number that was in fact
+  // correct, which is the worst kind of guard: it fails on good input and
+  // teaches you to edit the claim until the check goes quiet.
+  //
+  // The env var stops the child from recursing into this same test.
+  // NODE_TEST_CONTEXT is how the runner detects a recursive invocation and
+  // refuses to run files; the child is a fresh run, so it must not inherit it.
+  const childEnv = { ...process.env, CITABLE_COUNTING: '1' };
+  delete childEnv.NODE_TEST_CONTEXT;
+
+  const child = await new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      ['--test'],
+      { cwd: fileURLToPath(new URL('..', import.meta.url)), env: childEnv, maxBuffer: 64 * 1024 * 1024 },
+      (error, stdout, stderr) => resolve({ stdout, stderr }),
+    );
+  });
+
+  const reported = child.stdout.match(/^# tests (\d+)$/m);
+  assert.ok(reported, `could not read a test count from the runner:\n${child.stderr.slice(0, 500)}`);
+  // A skipped test still counts toward the runner's total, so the child's
+  // number matches a full run and needs no adjustment. Verified rather than
+  // assumed — the opposite would have made the README consistently off by one.
+  const total = Number(reported[1]);
 
   const claimed = readme.match(/# (\d+) tests, no install step/);
   assert.ok(claimed, 'README should state the test count');
-  assert.equal(
-    Number(claimed[1]),
-    total,
-    `README claims ${claimed?.[1]} tests but the suite defines ${total}`,
-  );
+  assert.equal(Number(claimed[1]), total, `README claims ${claimed?.[1]} tests but the suite runs ${total}`);
 });
 
 test('documented CLI flags exist in the CLI', () => {
