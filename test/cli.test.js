@@ -254,3 +254,47 @@ test('a licence key is accepted from the flag and from the environment', async (
   assert.equal(JSON.parse(rejected.stdout).tier, 'free');
   assert.match(rejected.stderr, /not accepted/);
 });
+
+test('a numeric flag given junk is a usage error, not a reinterpretation', async (t) => {
+  // These decide whether a build passes. `Number.parseInt` kept whatever it
+  // produced, so a typo changed behaviour instead of stopping it:
+  //
+  //   --min-score abc  → NaN, and `score < NaN` is false, so the gate passed
+  //                      every build. A team using `--min-score $THRESHOLD`
+  //                      with the variable unset lost their regression
+  //                      protection and saw nothing but green.
+  //   --min-score ''   → 0, which is a gate that can never fail — the same
+  //                      silent loss, and the likelier spelling of it, since an
+  //                      unset CI variable expands to nothing.
+  //   --limit 1e9      → 1, so a site crawl audited a single page and looked
+  //                      like it had worked.
+  //
+  // Exit 2 throughout: a usage error, distinguishable from the audit's own
+  // exit 1, so a script can tell "you configured this wrong" from "the site
+  // failed the check".
+  const url = await startSite(t);
+
+  for (const [flag, value] of [
+    ['--min-score', 'abc'], ['--min-score', ''], ['--min-score', '   '], ['--min-score', '200'],
+    ['--min-score', '-1'], ['--limit', 'abc'], ['--limit', '0'], ['--limit', '-5'],
+    ['--limit', '1e9'], ['--limit', '3.7'], ['--timeout', 'xyz'], ['--timeout', '0'],
+  ]) {
+    const result = await cli([url, '--allow-private', '--no-color', flag, value]);
+    assert.equal(result.code, 2, `${flag} ${JSON.stringify(value)} should be a usage error, got exit ${result.code}`);
+    assert.match(result.stderr, new RegExp(flag.replace(/-/g, '\\-')), `${flag} should be named in the message`);
+  }
+});
+
+test('valid numeric flags still work, including the edges', async (t) => {
+  // The validation must not break the values people actually pass. A zero
+  // min-score is legal and pointless; an empty one is a mistake — the
+  // difference matters, because rejecting both would break a real config.
+  const url = await startSite(t);
+
+  assert.equal((await cli([url, '--allow-private', '--no-color', '--min-score', '0'])).code, 0);
+  assert.equal((await cli([url, '--allow-private', '--no-color', '--min-score', '100'])).code, 1, 'a real gate still fires');
+
+  const crawl = await cli([url, '--allow-private', '--site', '--limit', '1', '--json']);
+  assert.equal(crawl.code, 0, crawl.stderr);
+  assert.equal(JSON.parse(crawl.stdout).pagesAudited, 1);
+});

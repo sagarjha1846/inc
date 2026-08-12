@@ -116,6 +116,34 @@ function parseArgs(argv) {
       return value;
     };
 
+    /**
+     * A number, or a usage error — never NaN and never a silent
+     * reinterpretation.
+     *
+     * `Number.parseInt` kept whatever it produced, which made a typo change
+     * behaviour instead of stopping it. `--min-score abc` became NaN, and
+     * `score < NaN` is false, so the CI gate quietly passed every build: a
+     * team using `--min-score ${VARS_THRESHOLD}` with the variable unset lost
+     * their regression protection and saw nothing but green. `--limit 1e9`
+     * parsed as 1 and audited a single page while looking like it worked.
+     */
+    const nextNumber = ({ min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
+      const raw = next();
+      // `Number('')` is 0, and a `--min-score 0` gate never fails — so an unset
+      // CI variable expanding to nothing would disable the check while looking
+      // like a deliberate threshold. That is the case this exists to catch, so
+      // it cannot be the one that slips through.
+      if (String(raw).trim() === '') throw new Error(`${arg} needs a whole number, got an empty value`);
+      const value = Number(raw);
+      if (!Number.isFinite(value) || !Number.isInteger(value)) {
+        throw new Error(`${arg} needs a whole number, got "${raw}"`);
+      }
+      if (value < min || value > max) {
+        throw new Error(`${arg} must be between ${min} and ${max}, got ${value}`);
+      }
+      return value;
+    };
+
     switch (arg) {
       case '--help':
       case '-h':
@@ -127,7 +155,7 @@ function parseArgs(argv) {
         options.site = true;
         break;
       case '--limit':
-        options.limit = Number.parseInt(next(), 10);
+        options.limit = nextNumber({ min: 1, max: 5000 });
         break;
       case '--key':
         options.key = next();
@@ -167,7 +195,7 @@ function parseArgs(argv) {
         options.failOnRegression = true;
         break;
       case '--min-score':
-        options.minScore = Number.parseInt(next(), 10);
+        options.minScore = nextNumber({ min: 0, max: 100 });
         break;
       case '--fail-on':
         options.failOn = String(next()).toLowerCase();
@@ -182,7 +210,7 @@ function parseArgs(argv) {
         options.allowPrivate = true;
         break;
       case '--timeout':
-        options.timeout = Number.parseInt(next(), 10);
+        options.timeout = nextNumber({ min: 1, max: 600_000 });
         break;
       default:
         if (arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`);
