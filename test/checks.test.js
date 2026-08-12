@@ -643,3 +643,43 @@ test('no report claims nothing is blocked when the check did not run', async () 
   const absent = await auditWith(() => new Response('', { status: 404 }));
   assert.match(renderMarkdown(absent), /nothing is blocked/);
 });
+
+test('every optional-file check separates "absent" from "could not check"', async () => {
+  // robots.txt was the case that mattered most, but llms.txt and sitemap.xml
+  // had the same shape: a failed request produced advice to publish a file the
+  // site may already have — the same wrong-work instruction as telling a page
+  // with misplaced prose to write more of it.
+  const { auditUrl } = await import('../src/core/audit.js');
+  const body = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>A guide to widget upkeep</title></head>'
+    + `<body><main><h1>Widgets</h1><p>${'Body copy about widgets. '.repeat(60)}</p></main></body></html>`;
+
+  const run = (optionalBehaviour) => auditUrl('https://acme.test/page', {
+    tier: 'pro',
+    fetchOptions: {
+      fetchImpl: async (url) => {
+        const target = String(url);
+        if (target.endsWith('/robots.txt')) {
+          return new Response('User-agent: *\nAllow: /\n', { status: 200, headers: { 'content-type': 'text/plain' } });
+        }
+        if (target.endsWith('/llms.txt') || target.endsWith('/sitemap.xml')) return optionalBehaviour();
+        return new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+      },
+    },
+  });
+
+  const failed = await run(() => {
+    throw Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' });
+  });
+  const absent = await run(() => new Response('', { status: 404 }));
+
+  for (const id of ['llms-txt', 'sitemap']) {
+    const unchecked = [...failed.issues, ...failed.passes].find((f) => f.id === id);
+    const missing = [...absent.issues, ...absent.passes].find((f) => f.id === id);
+
+    assert.match(unchecked.title, /could not be checked/i, `${id}: a failed fetch must say so`);
+    assert.doesNotMatch(unchecked.fix, /^Publish/, `${id}: must not tell them to publish what may exist`);
+
+    assert.doesNotMatch(missing.title, /could not be checked/i, `${id}: a 404 is an answer`);
+    assert.match(missing.title, /^No /, `${id}: and it should say the file is absent`);
+  }
+});

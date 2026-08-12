@@ -433,12 +433,20 @@ function checkAccess(ctx) {
         id: 'llms-txt',
         category: 'access',
         severity: 'low',
-        title: 'No llms.txt published',
-        detail:
-          'llms.txt is a plain-Markdown index at your site root that tells models what your site is and which pages matter. Adoption is early, the cost is one file, and it is one of the few levers with no downside.',
-        evidence: `${ctx.llms.url || '/llms.txt'} → ${ctx.llms.status || 'not found'}`,
-        impact: 'Missed orientation for agents that look for it before crawling.',
-        fix: 'Publish the generated llms.txt included in this report at https://yourdomain/llms.txt.',
+        // A failed request is not an answer. Telling someone to publish a file
+        // they may already have is the same wrong-work advice as telling a page
+        // with misplaced prose to write more of it.
+        title: ctx.llms.status ? 'No llms.txt published' : 'llms.txt could not be checked',
+        detail: ctx.llms.status
+          ? 'llms.txt is a plain-Markdown index at your site root that tells models what your site is and which pages matter. Adoption is early, the cost is one file, and it is one of the few levers with no downside.'
+          : 'The request for /llms.txt failed rather than returning "not found", so this report cannot say whether you publish one.',
+        evidence: `${ctx.llms.url || '/llms.txt'} → ${ctx.llms.status || ctx.llms.error || 'no response'}`,
+        impact: ctx.llms.status
+          ? 'Missed orientation for agents that look for it before crawling.'
+          : 'Unknown — the file may already exist.',
+        fix: ctx.llms.status
+          ? 'Publish the generated llms.txt included in this report at https://yourdomain/llms.txt.'
+          : 'Re-run the audit, or open /llms.txt yourself to confirm.',
         earned: 0,
         max: 2,
       }),
@@ -448,6 +456,8 @@ function checkAccess(ctx) {
   // 6. Sitemap discoverability.
   const sitemapDeclared = robots.found && /^\s*sitemap\s*:/im.test(robots.body);
   const sitemapFound = ctx.sitemap.found;
+  // Same distinction again: a request that failed says nothing about the site.
+  const sitemapUnchecked = !sitemapFound && !ctx.sitemap.status;
   out.push(
     finding({
       id: 'sitemap',
@@ -455,13 +465,21 @@ function checkAccess(ctx) {
       // a pass while still withholding points would leave the user with every
       // check green and a score under 100, and nothing explaining the
       // difference.
-      severity: sitemapFound ? (sitemapDeclared ? 'pass' : 'low') : 'medium',
+      severity: sitemapFound ? (sitemapDeclared ? 'pass' : 'low') : sitemapUnchecked ? 'low' : 'medium',
       category: 'access',
-      title: sitemapFound ? `Sitemap available${sitemapDeclared ? ' and declared in robots.txt' : ' but not declared in robots.txt'}` : 'No sitemap found',
+      title: sitemapFound
+        ? `Sitemap available${sitemapDeclared ? ' and declared in robots.txt' : ' but not declared in robots.txt'}`
+        : sitemapUnchecked ? 'Sitemap could not be checked' : 'No sitemap found',
       detail: sitemapFound
         ? `Crawlers can enumerate your pages from ${ctx.sitemap.url}.${sitemapDeclared ? '' : ' It is not declared in robots.txt, so discovery depends on the conventional path.'}`
-        : 'Without a sitemap, crawlers discover pages only by following links, which leaves deep or newly published pages unindexed for longer.',
-      fix: sitemapFound && sitemapDeclared ? null : 'Publish /sitemap.xml and add a `Sitemap:` line to robots.txt.',
+        : sitemapUnchecked
+          ? 'The request for /sitemap.xml failed rather than returning "not found", so this report cannot say whether you publish one.'
+          : 'Without a sitemap, crawlers discover pages only by following links, which leaves deep or newly published pages unindexed for longer.',
+      fix: sitemapFound && sitemapDeclared
+        ? null
+        : sitemapUnchecked
+          ? 'Re-run the audit, or open /sitemap.xml yourself to confirm.'
+          : 'Publish /sitemap.xml and add a `Sitemap:` line to robots.txt.',
       earned: sitemapFound ? (sitemapDeclared ? 2 : 1.5) : 0,
       max: 2,
     }),
