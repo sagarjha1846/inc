@@ -58,6 +58,28 @@ const BAR_WIDTH = 24;
  * fetch this page." When the fetch had merely failed, that is a false
  * assurance about the one thing this report is bought to establish.
  */
+/**
+ * An accent colour, or the default.
+ *
+ * `accent` is the one branding option that lands in a CSS context rather than
+ * a text one, so HTML-escaping — which every other caller-supplied string gets
+ * — does nothing for it. Interpolated raw, `red</style><script>…` closed the
+ * style block and put a script into a report an agency emails to a client, and
+ * `red;} @import url(//host/x.css);` made a document sold as self-contained
+ * fetch a stylesheet from somewhere else.
+ *
+ * Rejecting rather than sanitising: a colour has a small, exactly known set of
+ * valid spellings, so anything outside it is a mistake worth surfacing, and a
+ * partial escape would leave the question of what got through.
+ */
+const SAFE_COLOUR = /^(#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|(?:rgb|hsl)a?\([0-9.,%\s/deg]+\)|[a-z]{3,20})$/i;
+
+export function isSafeAccent(value) {
+  return SAFE_COLOUR.test(String(value ?? '').trim());
+}
+
+const accentOr = (value, fallback) => (isSafeAccent(value) ? String(value).trim() : fallback);
+
 const crawlersUnverified = (result) =>
   (result.issues || []).some((issue) => issue.id === 'robots-unreachable');
 
@@ -353,7 +375,7 @@ export function renderHtml(result, options = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Visibility Audit — ${escapeHtml(result.url)}</title>
 <style>
-  :root { --accent:${accent}; --ink:#16202b; --muted:#5c6675; --line:#e2e7ee; --panel:#f7f9fb; }
+  :root { --accent:${accentOr(accent, '#0d9488')}; --ink:#16202b; --muted:#5c6675; --line:#e2e7ee; --panel:#f7f9fb; }
   *{box-sizing:border-box}
   body{margin:0;background:#fff;color:var(--ink);line-height:1.62;
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -567,7 +589,7 @@ export function renderSiteHtml(rollup, options = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Site AI Visibility Audit — ${escapeHtml(audited.length ? new URL(audited[0].url).hostname : 'site')}</title>
 <style>
-  :root { --accent:${accent}; --ink:#16202b; --muted:#5c6675; --line:#e2e7ee; --panel:#f7f9fb; }
+  :root { --accent:${accentOr(accent, '#0d9488')}; --ink:#16202b; --muted:#5c6675; --line:#e2e7ee; --panel:#f7f9fb; }
   *{box-sizing:border-box}
   body{margin:0;background:#fff;color:var(--ink);line-height:1.62;
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;

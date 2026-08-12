@@ -313,3 +313,45 @@ test('a partial template list says so instead of reading as complete', async (t)
   const html = renderSiteHtml(free);
   assert.match(html, new RegExp(`Showing 3 of ${free.sitewideIssuesTotal} template-level issues`));
 });
+
+test('a branding colour cannot inject into the report it styles', async () => {
+  // `accent` is the one caller-supplied value that lands in a CSS context, so
+  // the HTML escaping every other string gets does nothing for it. Interpolated
+  // raw it closed the <style> block and put a <script> into a document an
+  // agency emails to a client, and it could pull in an external stylesheet —
+  // breaking the self-contained, no-outbound-requests property this report is
+  // sold on.
+  const { renderHtml, renderSiteHtml, isSafeAccent } = await import('../src/core/report.js');
+  const result = await auditUrl('https://acme.test/p', {
+    tier: 'pro',
+    fetchOptions: {
+      fetchImpl: async () => new Response(
+        `<!doctype html><html lang="en"><head><title>T</title></head><body><main><h1>W</h1><p>${'copy '.repeat(60)}</p></main></body></html>`,
+        { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } },
+      ),
+    },
+  });
+  const rollup = { pagesAudited: 1, pagesFailed: 0, averageScore: result.score, worst: result, best: result, sitewideIssues: [], pages: [result] };
+
+  for (const accent of [
+    'red</style><script>alert(1)</script><style>',
+    'red;} @import url(//evil.test/x.css); .y{',
+    'red}body{display:none}.x{color:red',
+    'url(//evil.test/track.png)',
+    'expression(alert(1))',
+  ]) {
+    assert.equal(isSafeAccent(accent), false, `${accent} should not be accepted`);
+    for (const [label, html] of [['page', renderHtml(result, { accent })], ['site', renderSiteHtml(rollup, { accent })]]) {
+      assert.doesNotMatch(html, /<script>alert/, `${label}: script injected via accent`);
+      assert.doesNotMatch(html, /@import/, `${label}: external stylesheet pulled in via accent`);
+      assert.doesNotMatch(html, /display:none\}/, `${label}: layout overridden via accent`);
+      assert.doesNotMatch(html, /url\(\/\/evil/, `${label}: external request via accent`);
+    }
+  }
+
+  // The colours people actually pass must survive, or the fix breaks branding.
+  for (const accent of ['#7c3aed', '#fff', '#0d9488ff', 'rebeccapurple', 'rgb(124 58 237)', 'hsl(258 90% 66%)']) {
+    assert.equal(isSafeAccent(accent), true, `${accent} is a legitimate colour`);
+    assert.ok(renderHtml(result, { accent }).includes(`--accent:${accent}`), `${accent} should reach the stylesheet`);
+  }
+});

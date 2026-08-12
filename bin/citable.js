@@ -13,6 +13,7 @@ import { auditSite, auditUrl, urlsFromSitemap } from '../src/core/audit.js';
 import { renderHtml, renderMarkdown, renderSiteHtml, renderSiteMarkdown, renderTerminal } from '../src/core/report.js';
 import { compareAudits, renderComparison, renderComparisonMarkdown } from '../src/core/compare.js';
 import { tierFor } from '../src/core/license.js';
+import { isSafeAccent } from '../src/core/report.js';
 
 const VERSION = '0.1.0';
 
@@ -173,9 +174,15 @@ function parseArgs(argv) {
       case '--brand':
         options.brand = next();
         break;
-      case '--accent':
-        options.accent = next();
+      case '--accent': {
+        // Validated here as well as in the renderer, so a typo is a usage error
+        // rather than a silent fall back to the default colour — the report
+        // would otherwise come out unbranded with nothing saying why.
+        const value = next();
+        if (!isSafeAccent(value)) throw new Error(`--accent needs a CSS colour, got "${value}"`);
+        options.accent = value;
         break;
+      }
       case '--prepared-for':
         options.preparedFor = next();
         break;
