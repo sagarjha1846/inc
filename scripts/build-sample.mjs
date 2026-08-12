@@ -7,7 +7,12 @@
  * than hand-written marketing numbers. Re-run this whenever the checks or the
  * result shape change, or the demo will drift out of sync with the product.
  *
- *   node scripts/build-sample.mjs
+ *   node scripts/build-sample.mjs [outFile]
+ *
+ * `outFile` defaults to src/worker/sample.js. The drift test passes a temporary
+ * path instead: writing the committed file would mutate the working tree while
+ * other test files are reading it in parallel processes, and a build that
+ * imported it mid-write failed with a parse error and no explanation.
  */
 
 import http from 'node:http';
@@ -151,10 +156,16 @@ const banner = `/**
 
 `;
 
+const outFile = process.argv[2]
+  ? new URL(process.argv[2], `file://${process.cwd()}/`)
+  : new URL('../src/worker/sample.js', import.meta.url);
+
 await writeFile(
-  new URL('../src/worker/sample.js', import.meta.url),
+  outFile,
   `${banner}export const SAMPLE_RESULT = ${JSON.stringify(sanitized, null, 2)};\n`,
   'utf8',
 );
 
-process.stderr.write(`build-sample: wrote src/worker/sample.js (score ${sanitized.score}, ${sanitized.issuesTotal} findings)\n`);
+process.stderr.write(
+  `build-sample: wrote ${process.argv[2] || 'src/worker/sample.js'} (score ${sanitized.score}, ${sanitized.issuesTotal} findings)\n`,
+);

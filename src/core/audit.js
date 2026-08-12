@@ -146,16 +146,46 @@ export async function auditSite(urls, options = {}) {
   const recurrence = new Map();
   for (const page of scoredPages) {
     for (const issue of page.issues || []) {
-      const entry = recurrence.get(issue.id) || { id: issue.id, title: issue.title, severity: issue.severity, pages: 0, fix: issue.fix };
+      const entry = recurrence.get(issue.id)
+        || { id: issue.id, title: issue.title, severity: issue.severity, pages: 0, points: 0, fix: issue.fix };
       entry.pages += 1;
+      entry.points += Number.isFinite(issue.points) ? issue.points : issue.max - issue.earned;
+      // The same check can fire at different severities on different pages.
+      // The worst one is what the fix has to clear, so that is what is reported.
+      if (SEVERITY_ORDER.indexOf(issue.severity) < SEVERITY_ORDER.indexOf(entry.severity)) {
+        entry.severity = issue.severity;
+      }
       recurrence.set(issue.id, entry);
     }
   }
 
-  const ranked = [...recurrence.values()].sort((a, b) => {
-    const bySpread = b.pages - a.pages;
-    return bySpread !== 0 ? bySpread : SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity);
-  });
+  // Ordered by what one fix recovers across the whole site.
+  //
+  // This was sorted by page count first, so a cosmetic issue on twenty pages
+  // outranked a blocking one on nineteen — and the site report's whole claim is
+  // that it tells you which fix matters most. Counting pages measures spread
+  // but not what the spread is worth.
+  //
+  // Total points measures both at once, because it is already summed over the
+  // affected pages: a medium worth 4 points on twenty pages is 80, and beats a
+  // high worth 7 on one. That is the right answer for a site, and it is why the
+  // rule differs from the single-page one in `prioritize` — there, every finding
+  // draws on the same page's budget, so severity is a fair proxy.
+  //
+  // Criticals still come first. "This page cannot be cited at all" is not a
+  // points trade, and in practice they come from robots.txt and so affect every
+  // page anyway, which means the exception rarely changes the order.
+  const isBlocker = (entry) => (entry.severity === 'critical' ? 0 : 1);
+  const ranked = [...recurrence.values()]
+    .map((entry) => ({ ...entry, points: Math.round(entry.points * 10) / 10 }))
+    .sort((a, b) => {
+      const byBlocker = isBlocker(a) - isBlocker(b);
+      if (byBlocker !== 0) return byBlocker;
+      const byPoints = b.points - a.points;
+      if (byPoints !== 0) return byPoints;
+      const bySpread = b.pages - a.pages;
+      return bySpread !== 0 ? bySpread : SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity);
+    });
 
   // Now apply the tier, to the presentation only. Counts on everything shown
   // are computed from the complete findings above, so they are correct; what

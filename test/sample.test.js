@@ -133,34 +133,40 @@ test('the sample score is consistent with its own category totals', () => {
   );
 });
 
-test('the committed demo matches what the generator produces today', async () => {
+test('the committed demo matches what the generator produces today', async (t) => {
   // The demo on the live site is committed output. If the checks change and
   // nobody reruns the builder, the shop window shows a report the product can
   // no longer produce — and there is no signal, because the file still parses
   // and still renders.
+  //
+  // The rebuild goes to a temporary file. It used to overwrite the committed
+  // one and restore it in a `finally`, which is correct in isolation and wrong
+  // in a suite: `node --test` runs test files in parallel processes, and
+  // test/site-build.test.js spawns a build that imports src/worker/sample.js.
+  // Landing inside the write window gave that build a parse error and exit 1,
+  // so an unrelated test failed a few runs in a hundred with no clue why. A
+  // suite that reddens at random is worse than no suite, because the habit it
+  // teaches is to re-run rather than to look.
   const { execFile } = await import('node:child_process');
-  const { readFile, writeFile } = await import('node:fs/promises');
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises');
   const { fileURLToPath } = await import('node:url');
+  const os = await import('node:os');
+  const path = await import('node:path');
 
   const root = fileURLToPath(new URL('..', import.meta.url));
-  const samplePath = new URL('../src/worker/sample.js', import.meta.url);
-  const committed = await readFile(samplePath, 'utf8');
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'citable-sample-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const rebuiltPath = path.join(dir, 'sample.js');
 
-  try {
-    await new Promise((resolve, reject) => {
-      execFile(process.execPath, ['scripts/build-sample.mjs'], { cwd: root }, (error) =>
-        error ? reject(error) : resolve(),
-      );
-    });
-    const rebuilt = await readFile(samplePath, 'utf8');
-    assert.equal(
-      rebuilt,
-      committed,
-      'src/worker/sample.js is out of date — run `node scripts/build-sample.mjs` and commit the result',
+  await new Promise((resolve, reject) => {
+    execFile(process.execPath, ['scripts/build-sample.mjs', rebuiltPath], { cwd: root }, (error) =>
+      error ? reject(error) : resolve(),
     );
-  } finally {
-    // Restore whatever was committed, so a failure here does not also leave a
-    // modified file behind for the next thing that reads it.
-    await writeFile(samplePath, committed, 'utf8');
-  }
+  });
+
+  assert.equal(
+    await readFile(rebuiltPath, 'utf8'),
+    await readFile(new URL('../src/worker/sample.js', import.meta.url), 'utf8'),
+    'src/worker/sample.js is out of date — run `node scripts/build-sample.mjs` and commit the result',
+  );
 });

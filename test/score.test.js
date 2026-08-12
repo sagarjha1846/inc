@@ -149,3 +149,70 @@ test('the points a report prints are the points the finding is worth', async () 
   // finding can legitimately be worth exactly that many points, and the string
   // would then appear for a good reason.
 });
+
+test('site-wide issues are ordered by what one fix recovers across the site', async () => {
+  // The site report's stated claim is that it tells an agency which fix matters
+  // most, and that ordering is what the engagement is being sold on. It sorted
+  // by page count first, so a cosmetic issue on twenty pages outranked a
+  // blocking one on nineteen. Counting pages measures spread but not what the
+  // spread is worth; total points measures both, since it is already summed
+  // over the affected pages.
+  const { auditSite } = await import('../src/core/audit.js');
+
+  // Two shapes: most pages are missing structured data (worth a lot each), and
+  // every page including those is missing Open Graph (worth little each).
+  const body = (withSchema) => '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    + '<title>A guide to widget maintenance</title>'
+    + '<meta name="description" content="How to maintain widgets, when to replace them, and what it costs over a year of use.">'
+    + (withSchema
+      ? '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","name":"Acme","url":"https://acme.test"},{"@type":"Article","headline":"Widgets","datePublished":"2026-01-01","author":{"@type":"Person","name":"Ada"}}]}</script>'
+      : '')
+    + '</head><body><main><h1>Widget maintenance</h1>'
+    + `<p>${'Widgets need cleaning every quarter and replacing every third year. '.repeat(30)}</p>`
+    + '<h2>How often should I clean one?</h2>'
+    + `<p>${'Once a quarter is enough for ordinary indoor use. '.repeat(30)}</p>`
+    + '</main></body></html>';
+
+  const urls = Array.from({ length: 6 }, (_, i) => `https://acme.test/p${i}`);
+  const rollup = await auditSite(urls, {
+    tier: 'pro',
+    delayMs: 0,
+    fetchOptions: {
+      // Only the last page carries schema, so `jsonld-present` affects five of
+      // six pages while the Open Graph finding affects all six.
+      fetchImpl: async (url) => {
+        const target = String(url);
+        if (target.endsWith('/robots.txt')) {
+          return new Response('User-agent: *\nAllow: /\n', { status: 200, headers: { 'content-type': 'text/plain' } });
+        }
+        if (target.endsWith('/llms.txt') || target.endsWith('/sitemap.xml')) {
+          return new Response('', { status: 404 });
+        }
+        return new Response(body(target.endsWith('/p5')), {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        });
+      },
+    },
+  });
+
+  assert.equal(rollup.pagesAudited, 6);
+  const bySpread = [...rollup.sitewideIssues].sort((a, b) => b.pages - a.pages);
+  const widest = bySpread[0];
+  const first = rollup.sitewideIssues[0];
+
+  assert.ok(first.points > 0, 'every listed issue should carry the points it recovers site-wide');
+  assert.ok(
+    first.points >= widest.points,
+    `ordering put "${first.title}" (${first.points} pts) above the highest-value issue (${widest.points} pts)`,
+  );
+
+  // The whole list must be non-increasing in points once blockers are past.
+  const nonBlocking = rollup.sitewideIssues.filter((issue) => issue.severity !== 'critical');
+  for (let i = 1; i < nonBlocking.length; i += 1) {
+    assert.ok(
+      nonBlocking[i - 1].points >= nonBlocking[i].points,
+      `"${nonBlocking[i - 1].title}" (${nonBlocking[i - 1].points}) should not rank above "${nonBlocking[i].title}" (${nonBlocking[i].points})`,
+    );
+  }
+});
