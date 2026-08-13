@@ -233,3 +233,64 @@ test('a real checkout URL takes precedence over the request path', async (t) => 
   // is an anchor carrying it.
   assert.doesNotMatch(html, /<a class="cta cta-request"/);
 });
+
+test('the FAQ schema says exactly what the page says', async (t) => {
+  // Structured data whose answers do not match the visible page is worse than
+  // none: it is the machine-readable half drifting from the human half, which
+  // is the failure this product exists to find. Both are generated from one
+  // constant, so this asserts the property that arrangement is for — and would
+  // catch anyone re-hardcoding either side.
+  const dir = await build(t);
+  const html = await readFile(path.join(dir, 'index.html'), 'utf8');
+
+  const block = html.split('application/ld+json">')[1].split('</script>')[0];
+  const graph = JSON.parse(block)['@graph'];
+  const faq = graph.find((node) => node['@type'] === 'FAQPage');
+  assert.ok(faq, 'the landing page should carry FAQPage schema');
+  assert.ok(faq.mainEntity.length >= 5, 'and enough questions to be worth having');
+
+  // Visible text, with markup and entities resolved the way a reader sees it.
+  const visible = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ');
+
+  for (const entry of faq.mainEntity) {
+    assert.equal(entry['@type'], 'Question');
+    assert.equal(entry.acceptedAnswer['@type'], 'Answer');
+    assert.ok(visible.includes(entry.name), `question not on the page: ${entry.name}`);
+    // Compare a distinctive span rather than the whole answer, so ordinary
+    // whitespace differences do not fail a test about meaning.
+    const opening = entry.acceptedAnswer.text.slice(0, 60);
+    assert.ok(visible.includes(opening), `answer not on the page: ${opening}…`);
+  }
+
+  // And the authorship the audit asks every site for.
+  const app = graph.find((node) => node['@type'] === 'SoftwareApplication');
+  assert.ok(app.author, 'the page should name who stands behind it');
+});
+
+test('the landing page passes its own content-depth check', async (t) => {
+  // The audit graded this page "317 words — this page gives a model little to
+  // work with". Selling depth from a thin page is the kind of thing a prospect
+  // checks.
+  const dir = await build(t);
+  const html = await readFile(path.join(dir, 'index.html'), 'utf8');
+  const { runChecks } = await import('../src/core/checks.js');
+
+  const { findings } = runChecks({
+    url: 'https://sagarjha1846.github.io/inc/',
+    page: {
+      body: html, status: 200, ok: true, headers: { 'content-type': 'text/html; charset=utf-8' },
+      elapsedMs: 5, bytes: html.length, redirects: [], truncated: false,
+      finalUrl: 'https://sagarjha1846.github.io/inc/',
+    },
+  });
+
+  const depth = findings.find((finding) => finding.id === 'content-depth');
+  assert.equal(depth.severity, 'pass', `our own landing page is thin: ${depth.title}`);
+
+  const questions = findings.find((finding) => finding.id === 'question-headings');
+  assert.equal(questions.severity, 'pass', 'the page should answer questions people actually ask');
+});

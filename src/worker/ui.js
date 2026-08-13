@@ -10,6 +10,80 @@
 import { AI_CRAWLERS } from '../core/robots.js';
 
 /**
+ * The page's own FAQ, defined once and rendered twice.
+ *
+ * The visible answers and the FAQPage structured data are generated from the
+ * same source, because schema whose answers do not match the page is worse than
+ * no schema — it is the machine-readable half quietly drifting from the human
+ * half, which is exactly the failure this product exists to find. Deriving the
+ * plain text from the markup means they cannot disagree.
+ *
+ * The content itself is the audit's own advice taken on the audit's own page:
+ * it graded this page "317 words — little to work with", and the landing page
+ * is the only organic-discovery asset the project has.
+ */
+const FAQ = [
+  {
+    q: 'Why can\u2019t ChatGPT see my site?',
+    a: `Almost always one of three things. Your <code>robots.txt</code> disallows the crawler that fetches pages to answer questions \u2014 often copied from a blog post about "blocking AI scrapers", without realising the fetchers and the training crawlers are different. Or the page renders client-side, so what the server sends is an empty <code>&lt;div id="root"&gt;</code> and the crawler, which does not run JavaScript, reads a blank page. Or nothing on the page says machine-readably who published it, so the engine has no confident attribution to show and quotes a competitor instead.`,
+  },
+  {
+    q: 'Which crawlers actually decide whether I get cited?',
+    a: `Not the ones most people block. Citations come from the search and browsing agents: <code>OAI-SearchBot</code> and <code>ChatGPT-User</code> (ChatGPT), <code>Claude-SearchBot</code> and <code>Claude-User</code> (Claude), <code>PerplexityBot</code> and <code>Perplexity-User</code>. Blocking any of those removes you from that engine\u2019s answers entirely, no matter how good the page is. The training crawlers \u2014 <code>GPTBot</code>, <code>ClaudeBot</code>, <code>Google-Extended</code>, <code>Applebot-Extended</code>, <code>CCBot</code> \u2014 read pages to build models, not to answer today\u2019s question.`,
+  },
+  {
+    q: 'Is blocking AI crawlers a mistake?',
+    a: `Blocking the training crawlers is a legitimate content policy, and plenty of publishers make that choice deliberately. Blocking the citation crawlers is almost always an accident, because the two get bundled into the same copied snippet. They are separate decisions and this audit scores them separately \u2014 you can refuse to train the models and still want to be the source they cite.`,
+  },
+  {
+    q: 'What should my robots.txt say?',
+    a: `If you want citations and are relaxed about training, the shortest honest version is to allow everything. If you want citations but not training, name the crawlers: allow <code>OAI-SearchBot</code>, <code>Claude-SearchBot</code> and <code>PerplexityBot</code>, disallow <code>GPTBot</code>, and declare your sitemap. Rules are matched by longest path, not by file order, and a <code>Disallow: /</code> under <code>User-agent: *</code> applies to every crawler that has no group of its own.`,
+    extra: `<pre style="font-size:13px"><code>User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: GPTBot
+Disallow: /
+
+Sitemap: https://yoursite.com/sitemap.xml</code></pre>`,
+  },
+  {
+    q: 'Does llms.txt matter yet?',
+    a: `Honestly, it is unsettled. <code>/llms.txt</code> is a plain-Markdown index that tells a model what your site is and which pages matter, and adoption is early enough that it may become a standard or may fade. It costs one file, so this audit weights it lightly \u2014 2 points out of 100 \u2014 rather than pretending the question is decided. Nothing else in the score depends on it.`,
+  },
+  {
+    q: 'How long does any of this take to fix?',
+    a: `The crawler-access fix is a few lines of <code>robots.txt</code> and takes effect the next time a crawler visits. Structured data is one <code>&lt;script type="application/ld+json"&gt;</code> block in the head. Server-rendering a client-rendered page is the expensive one, and it is the only finding here that is a project rather than an afternoon.`,
+  },
+];
+
+/** Markup answers reduced to the plain text the schema must carry. */
+const plainAnswer = (html) => html
+  .replace(/<[^>]+>/g, '')
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&amp;/g, '&')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const FAQ_HTML = FAQ.map((item) => `    <h4>${item.q}</h4>\n    <p class="fix">${item.a}</p>${item.extra ? `\n    ${item.extra}` : ''}`).join('\n\n');
+
+const FAQ_SCHEMA = {
+  '@type': 'FAQPage',
+  '@id': '/#faq',
+  mainEntity: FAQ.map((item) => ({
+    '@type': 'Question',
+    name: plainAnswer(item.q),
+    acceptedAnswer: { '@type': 'Answer', text: plainAnswer(item.a) },
+  })),
+};
+
+/**
  * A URL safe to put in an `href`, or null.
  *
  * `priceUrl` and `requestUrl` were interpolated raw into the buy button's
@@ -90,10 +164,25 @@ export function renderApp({
 <meta property="og:description" content="Free audit of your site's AI answer-engine visibility.">
 <meta property="og:type" content="website">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@graph":[
- {"@type":"Organization","@id":"/#org","name":"Citable","url":"/"},
- {"@type":"SoftwareApplication","name":"Citable","applicationCategory":"DeveloperApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"publisher":{"@id":"/#org"}}
-]}
+${JSON.stringify({
+  '@context': 'https://schema.org',
+  '@graph': [
+    { '@type': 'Organization', '@id': '/#org', name: 'Citable', url: '/' },
+    {
+      '@type': 'SoftwareApplication',
+      name: 'Citable',
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'Web',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      publisher: { '@id': '/#org' },
+      // Named authorship is a trust signal the audit weighs, and this page had
+      // none — it is an organisation's page, so the organisation is the honest
+      // answer rather than inventing a person.
+      author: { '@id': '/#org' },
+    },
+    FAQ_SCHEMA,
+  ],
+})}
 </script>
 <style>
 :root{
@@ -125,6 +214,10 @@ button:disabled{opacity:.55;cursor:progress}
 .keyrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:44px}
 .keyrow input{flex:0 1 300px;padding:9px 12px;font-size:13px;border-radius:9px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:24px;margin-bottom:18px}
+.faq h4{font-size:17px;margin:26px 0 8px;letter-spacing:-.01em}
+.faq h4:first-of-type{margin-top:4px}
+.faq p{max-width:74ch}
+.faq code{font-family:var(--mono);font-size:.92em}
 .hidden{display:none}
 .scorewrap{display:flex;gap:28px;align-items:center;flex-wrap:wrap}
 .ring{flex:0 0 128px}
@@ -240,6 +333,14 @@ footer{color:var(--muted);font-size:13px;padding:40px 0 60px;border-top:1px soli
         ${buyButton('Get a Pro key', 'Request a Pro key')}
       </div>
     </div>
+  </section>
+
+  <!-- Rendered from the FAQ constant above, which also produces the FAQPage
+       schema in the head, so the two cannot drift apart. -->
+  <section class="card faq">
+    <h3>Common questions</h3>
+
+${FAQ_HTML}
   </section>
 
   <section class="card">
