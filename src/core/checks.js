@@ -26,7 +26,7 @@ import {
   visibleText,
   wordCount,
 } from './html.js';
-import { CITATION_CRAWLERS, crawlerMatrix } from './robots.js';
+import { AI_CRAWLERS, CITATION_CRAWLERS, crawlerMatrix, parseRobots } from './robots.js';
 import { registrableDomain } from './fetch.js';
 import { LLMS_PLACEHOLDER_MARKER } from './generate.js';
 
@@ -204,6 +204,48 @@ function checkAccess(ctx) {
   } else {
     const matrix = crawlerMatrix(robots.body, path);
     ctx.matrix = matrix;
+
+    // A group naming a token that is not a valid product token matches nothing
+    // here, and implementations differ on how they resolve it — so the honest
+    // report is not a verdict but the observation. RFC 9309 §2.2.1 defines a
+    // product token as letters and hyphens only, so `User-agent: GPTBot/1.0`,
+    // written by copying a full user-agent string, is outside the grammar. The
+    // site believes it has a rule for that crawler; it may have none at all.
+    //
+    // Only tokens that look like a tracked crawler with something appended are
+    // reported, which keeps this to the case where intent is unmistakable and
+    // avoids opining on every unfamiliar bot name in the file.
+    const malformed = [];
+    for (const group of parseRobots(robots.body).groups) {
+      for (const agent of group.agents) {
+        if (agent === '*' || /^[a-z-]+$/.test(agent)) continue;
+        const looksLike = AI_CRAWLERS.find((crawler) => agent.startsWith(`${crawler.token.toLowerCase()}/`)
+          || agent.startsWith(`${crawler.token.toLowerCase()} `));
+        if (looksLike && !malformed.some((entry) => entry.agent === agent)) {
+          malformed.push({ agent, token: looksLike.token });
+        }
+      }
+    }
+    if (malformed.length) {
+      out.push(
+        finding({
+          id: 'robots-agent-malformed',
+          category: 'access',
+          severity: 'medium',
+          title: `${malformed.length} robots.txt group name(s) are not valid crawler tokens`,
+          detail:
+            'A user-agent line names a product token, which RFC 9309 defines as letters and hyphens only — no version, no spaces. These lines carry extra characters, so a crawler may not recognise the group as its own and may fall through to the rules for `*` instead. Whatever rules were written here may simply not apply.',
+          evidence: malformed.map((entry) => `User-agent: ${entry.agent}   → did you mean "${entry.token}"?`).join('\n'),
+          impact: 'Unknown until it is corrected: the intended rule may be silently inactive, in either direction.',
+          fix: `Name the bare token, for example \`User-agent: ${malformed[0].token}\`.`,
+          // Informational: this reports a fact about the file rather than a
+          // failing of the page, so it must not move the score in either
+          // direction while the effect is genuinely unknown.
+          earned: 0,
+          max: 0,
+        }),
+      );
+    }
     const blocked = matrix.filter((crawler) => !crawler.allowed);
     const blockedCitation = blocked.filter(
       (crawler) => crawler.purpose === 'citation' || crawler.purpose === 'live-fetch',

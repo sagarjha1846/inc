@@ -252,3 +252,45 @@ test('percent-escapes are normalised by whether the character is reserved', () =
   // And normalisation must not make unrelated paths collide.
   assert.equal(blocked('/exact', '/other'), false);
 });
+
+test('a user-agent that is not a valid product token is reported, not resolved', async () => {
+  // RFC 9309 §2.2.1 defines a product token as letters and hyphens only, so
+  // `User-agent: GPTBot/1.0` — written by pasting a full user-agent string — is
+  // outside the grammar. It matches nothing here, and implementations differ on
+  // how they resolve it, so the honest output is the observation rather than a
+  // verdict: the site believes it has a rule for that crawler and may have none.
+  const { runChecks } = await import('../src/core/checks.js');
+  const { scoreFindings } = await import('../src/core/score.js');
+
+  const page = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>A guide to widgets</title></head>'
+    + `<body><main><h1>Widgets</h1><p>${'Body copy. '.repeat(80)}</p></main></body></html>`;
+  const audit = (robotsBody) => runChecks({
+    url: 'https://acme.test/page',
+    page: {
+      body: page, status: 200, ok: true, headers: { 'content-type': 'text/html; charset=utf-8' },
+      elapsedMs: 5, bytes: page.length, redirects: [], truncated: false, finalUrl: 'https://acme.test/page',
+    },
+    robots: { found: true, body: robotsBody, status: 200 },
+  }).findings;
+
+  const flagged = audit('User-agent: GPTBot/1.0\nDisallow: /\n\nUser-agent: *\nAllow: /\n');
+  const finding = flagged.find((item) => item.id === 'robots-agent-malformed');
+  assert.ok(finding, 'a malformed token should be surfaced');
+  assert.match(finding.evidence, /did you mean "GPTBot"/, 'and should name the token meant');
+
+  // Informational only. The effect is genuinely unknown, so it must not move the
+  // score in either direction — claiming a penalty would assert a verdict this
+  // check exists precisely because nobody can give.
+  const clean = audit('User-agent: *\nAllow: /\n');
+  assert.equal(scoreFindings(flagged).score, scoreFindings(clean).score);
+
+  // Quiet when there is nothing to say: valid tokens, the wildcard, and bots
+  // this tool does not track are all left alone.
+  for (const body of [
+    'User-agent: GPTBot\nUser-agent: Claude-SearchBot\nDisallow: /\n',
+    'User-agent: *\nDisallow: /\n',
+    'User-agent: SomeCrawler/3.0\nDisallow: /\n',
+  ]) {
+    assert.equal(audit(body).some((item) => item.id === 'robots-agent-malformed'), false, `should be quiet for: ${body}`);
+  }
+});
