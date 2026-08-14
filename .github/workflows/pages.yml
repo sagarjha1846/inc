@@ -11,6 +11,11 @@ name: Deploy site
 # which the default workflow token is not granted here, and it fails with
 # "Resource not accessible by integration". A branch push only needs
 # `contents: write`, and GitHub serves the branch once Pages is pointed at it.
+#
+# That last clause is a prerequisite, not a note. If Pages is not enabled and set to
+# serve `gh-pages`, this workflow still succeeds on every push and the public URL still
+# returns 404 — the one failure in the deploy path that reports nothing, because from
+# here nothing failed. See docs/DEPLOY.md section 3b.
 
 on:
   push:

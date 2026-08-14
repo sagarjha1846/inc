@@ -191,6 +191,28 @@ curl "https://citable.<you>.workers.dev/api/license?key=CTB2..."
 
 It never echoes the key or the buyer's email back, so it is safe to share the URL.
 
+## 3b. Turn on GitHub Pages, or the shop window is invisible
+
+The `Deploy site` workflow builds the static site and force-pushes it to a `gh-pages`
+branch. It uses a branch push rather than the Pages deployment API because the default
+workflow token cannot *create* a Pages site — it fails with "Resource not accessible by
+integration".
+
+**GitHub only serves that branch if Pages is switched on and pointed at it.** Until then
+the workflow goes green, the branch updates on every push, and the public URL returns
+404. Nothing anywhere reports a problem, because from the workflow's point of view
+nothing went wrong — it was asked to push a branch and it pushed a branch.
+
+Settings → Pages → Source: **Deploy from a branch** → `gh-pages` / `/ (root)`. Then:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://<you>.github.io/<repo>/
+# 200 means it is genuinely live; 404 means Pages is not pointed at gh-pages yet
+```
+
+Check it once, after the first deploy. It is the only step in this document whose
+failure is completely silent, and the README links to that URL as though it works.
+
 ## 4. Verify the whole loop before announcing
 
 ```bash
