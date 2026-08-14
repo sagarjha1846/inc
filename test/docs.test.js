@@ -253,3 +253,25 @@ test('the compiled-in public key is a public key, not a secret', async () => {
     assert.match(LICENSE_PUBLIC_KEY, /^[A-Za-z0-9_-]{43}$/, 'an Ed25519 public x is 43 base64url characters');
   }
 });
+
+test('every flag the CLI accepts is one --help mentions', async () => {
+  // The existing check runs the other way: flags the README documents must
+  // exist in the parser. Nothing ran this direction, and `--md` had been
+  // accepted as an alias for `--markdown` without appearing in --help — a
+  // working feature nobody could discover, and the kind of thing that quietly
+  // becomes load-bearing for one person and unknown to everyone else.
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../bin/citable.js', import.meta.url), 'utf8');
+
+  const accepted = [...new Set([...source.matchAll(/case '(--[a-z-]+)'/g)].map((match) => match[1]))];
+  assert.ok(accepted.length > 15, 'the scan should find the flags, not nothing');
+
+  const help = source.split('const HELP')[1].split('`;')[0];
+  const undocumented = accepted.filter((flag) => !help.includes(flag)).sort();
+
+  assert.deepEqual(
+    undocumented,
+    [],
+    `accepted but absent from --help: ${undocumented.join(', ')} — document them or remove them`,
+  );
+});

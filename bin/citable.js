@@ -29,7 +29,7 @@ OPTIONS
   --limit <n>         Max pages in site mode (default 20).
   --key <key>         Pro license key. Also read from CITABLE_KEY.
   --json              Output raw JSON.
-  --markdown          Output a Markdown report.
+  --markdown, --md    Output a Markdown report.
   --html              Output a self-contained HTML report (client deliverable;
                       prints and saves to PDF cleanly). Works for a single page
                       and, with --site, for a whole-site rollup.
