@@ -40,11 +40,15 @@ inputs:
     required: false
     default: ''
   baseline:
-    description: 'Path to a previous --json result. When set, the run reports what changed instead of a fresh snapshot.'
+    description: >-
+      Path to a previous --json result for a single page. When set, the run reports what
+      changed instead of a fresh snapshot. Cannot be combined with site — a comparison is
+      between one page and one earlier result, and setting both fails the step rather than
+      quietly skipping the comparison.
     required: false
     default: ''
   fail-on-regression:
-    description: 'Fail the build if the comparison against the baseline shows a regression. Requires baseline.'
+    description: 'Fail the build if the comparison against the baseline shows a regression. Requires baseline, so it cannot be used with site either.'
     required: false
     default: 'false'
 

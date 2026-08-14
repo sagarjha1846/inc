@@ -295,3 +295,35 @@ test('a licence problem never fails the build, and never passes silently', async
   assert.equal(artifact.tier, 'free');
   assert.ok(artifact.score >= 0, 'the audit itself still ran and is still useful');
 });
+
+test('the action fails loudly when site and baseline are both set', async (t) => {
+  // The action lets both inputs be set, and passes both flags through. The CLI
+  // used to accept the pair and silently drop the comparison, so the step went
+  // green having done none of what was asked. Now it refuses — which is the
+  // right answer, and one the action's own documentation has to state, because
+  // a workflow that sets both has to learn about it from somewhere.
+  const site = await startSite();
+  t.after(() => site.stop());
+  const cwd = await workspace(t);
+
+  await writeFile(path.join(cwd, 'base.json'), JSON.stringify({ score: 80, issues: [], crawlers: [] }), 'utf8');
+
+  const run = await runAction(
+    { url: site.url, site: 'true', limit: '5', baseline: 'base.json', 'fail-on-regression': 'true' },
+    { cwd },
+  );
+
+  assert.notEqual(run.code, 0, 'the step must fail rather than report a green run it did not make');
+  assert.match(run.stderr, /cannot be combined with --site/);
+});
+
+test('the action documents the constraint it now enforces', async () => {
+  // A composite action's input descriptions are the only documentation most
+  // people read, and a rule enforced in the CLI but absent from them is one a
+  // workflow author meets as a red build with no explanation.
+  const { readFileSync } = await import('node:fs');
+  const yaml = readFileSync(new URL('../action.yml', import.meta.url), 'utf8');
+
+  const baselineBlock = yaml.split('baseline:')[1].split('fail-on-regression:')[0];
+  assert.match(baselineBlock, /[Cc]annot be combined with site/, 'the baseline input should state the restriction');
+});
