@@ -297,3 +297,40 @@ test('a baseline of the wrong shape is named, not crashed on', async () => {
     assert.ok(diff.summary, 'and a summary a human can read');
   }
 });
+
+test('a baseline flag that cannot be honoured is refused, not ignored', async (t) => {
+  // `--baseline` is only implemented for a single page. In site mode it was
+  // parsed, accepted and dropped, so this exited 0 on every run:
+  //
+  //   citable site.com --site --baseline base.json --fail-on-regression
+  //
+  // A whole-site regression gate that could never fire, with nothing saying so
+  // — the same false green as a `--min-score` that silently became NaN, and a
+  // more natural thing to type, since it is the documented single-page usage
+  // with `--site` added.
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'citable-sitebase-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const baseline = path.join(dir, 'b.json');
+  await writeFile(baseline, JSON.stringify({ score: 80, issues: [], crawlers: [] }), 'utf8');
+
+  const run = (args) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [path.join(ROOT, 'bin', 'citable.js'), ...args], { cwd: dir });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (code) => resolve({ code, stderr }));
+  });
+
+  const withSite = await run(['https://example.test/', '--site', '--baseline', baseline, '--no-color']);
+  assert.equal(withSite.code, 2, 'an unsupported combination is a usage error');
+  assert.match(withSite.stderr, /cannot be combined with --site/);
+  assert.match(withSite.stderr, /citable <url> --baseline/, 'and it should say what to do instead');
+
+  // The gate flag on its own promises a comparison there is nothing to make.
+  const bareGate = await run(['https://example.test/', '--fail-on-regression', '--no-color']);
+  assert.equal(bareGate.code, 2);
+  assert.match(bareGate.stderr, /needs --baseline/);
+
+  // Both are rejected before any network request, so a wrong invocation costs
+  // the audited site nothing.
+  assert.doesNotMatch(withSite.stderr, /auditing/);
+});

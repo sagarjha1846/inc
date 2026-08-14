@@ -297,6 +297,29 @@ async function main() {
     process.stdout.write(`${VERSION}\n`);
     return;
   }
+  // `--baseline` is only honoured for a single page. In site mode it used to be
+  // parsed, accepted and ignored, so `--site --baseline b.json
+  // --fail-on-regression` exited 0 on every run — a CI gate that could never
+  // fire, with nothing saying so. Refusing is worse than supporting it and far
+  // better than pretending: the caller asked for a comparison and was getting
+  // none.
+  if (options.site && options.baseline) {
+    process.stderr.write(
+      'citable: --baseline compares one page against one earlier result, so it cannot be combined with --site.\n'
+      + '         Baseline a specific page instead:  citable <url> --baseline baseline.json\n',
+    );
+    process.exit(2);
+  }
+  if (options.site && options.failOnRegression) {
+    process.stderr.write('citable: --fail-on-regression needs --baseline, which --site does not support.\n');
+    process.exit(2);
+  }
+  // --fail-on-regression without any baseline is the same empty promise.
+  if (options.failOnRegression && !options.baseline) {
+    process.stderr.write('citable: --fail-on-regression needs --baseline to compare against.\n');
+    process.exit(2);
+  }
+
   if (!options.url) {
     process.stdout.write(HELP);
     process.exit(2);
