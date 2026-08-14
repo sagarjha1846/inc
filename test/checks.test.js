@@ -123,6 +123,13 @@ const COMPANION_STATES = [
     sitemap: { found: false, body: '', status: 0, error: 'ECONNRESET', url: 's' },
     llms: { found: false, body: '', status: 0, error: 'ECONNRESET', url: 'l' },
   },
+  // A site with no robots.txt at all — a plain 404, not a failed request. Common
+  // in the wild, and reached by none of the states above.
+  {
+    robots: { found: false, body: '', status: 404, url: 'r' },
+    sitemap: { found: false, body: '', status: 404, url: 's' },
+    llms: { found: false, body: '', status: 404, url: 'l' },
+  },
 ];
 
 /** Every page crossed with every companion-file state. */
@@ -735,4 +742,35 @@ test('content="none" is the same suppression as noindex', () => {
 
   // `nofollow` on its own suppresses nothing about indexing or snippets.
   assert.equal(withMeta('<meta name="robots" content="nofollow">').severity, 'pass');
+});
+
+
+test('every check the code can emit is reached by some scenario', async () => {
+  // Twice now a check has been added without a case that reaches it, and the
+  // suite stayed green while never running the new code: an informational
+  // finding that violated the well-formedness invariants, and the plain
+  // "no robots.txt" branch that no companion state produced. A test suite that
+  // is green without exercising the thing it exists to check is the same
+  // failure as a check that passes without looking — which is most of what this
+  // product was shipped getting wrong.
+  //
+  // Reachability, not full coverage: an id emitted from two branches counts as
+  // reached when either fires. It catches the case that actually happens —
+  // a whole check nobody exercises — without pretending to more than it proves.
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../src/core/checks.js', import.meta.url), 'utf8');
+  const declared = [...new Set([...source.matchAll(/id: '([a-z0-9-]+)'/g)].map((match) => match[1]))];
+  assert.ok(declared.length > 20, 'the scan should find the checks, not nothing');
+
+  const reached = new Set();
+  for (const { findings } of everyScenario()) {
+    for (const item of findings) reached.add(item.id);
+  }
+
+  const unreachable = declared.filter((id) => !reached.has(id)).sort();
+  assert.deepEqual(
+    unreachable,
+    [],
+    `no scenario produces: ${unreachable.join(', ')} — add one to COMPANION_STATES or SAMPLE_PAGES`,
+  );
 });
