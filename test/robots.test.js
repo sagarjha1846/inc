@@ -218,3 +218,37 @@ test('a pathological pattern cannot hang the matcher', () => {
   assert.equal(isAllowed(parsed, 'Bot', `/${'a'.repeat(600)}`).allowed, true);
   assert.ok(Date.now() - started < 1000, 'matching should not blow up on adversarial input');
 });
+
+test('percent-escapes are normalised by whether the character is reserved', () => {
+  // RFC 9309 §2.2.2 compares paths after URI normalisation, and RFC 3986 §2.3
+  // makes a percent-encoded *unreserved* character identical to the character.
+  // Without decoding those, `Disallow: /%7Euser` did not block `/~user` — the
+  // audit telling a site owner a crawler can reach a page it cannot, in the
+  // category the score weights most heavily. `~` shows up encoded in real
+  // robots.txt files, so this is not only a spec-conformance point.
+  const blocked = (rule, path) => {
+    const crawler = crawlerMatrix(`User-agent: GPTBot\nDisallow: ${rule}\n`, path)
+      .find((entry) => entry.token === 'GPTBot');
+    return !crawler.allowed;
+  };
+
+  // Unreserved: encoded and raw are the same path, in either direction.
+  assert.equal(blocked('/%7Euser', '/~user'), true);
+  assert.equal(blocked('/~user', '/%7Euser'), true);
+  assert.equal(blocked('/pa%67e', '/page'), true);
+  assert.equal(blocked('/file%2Ename', '/file.name'), true);
+  assert.equal(blocked('/a%2Db', '/a-b'), true);
+
+  // Reserved: the escape is a different character and must stay one. Decoding
+  // `%2F` would turn one segment into two and match rules nobody wrote.
+  assert.equal(blocked('/a%2Fb', '/a/b'), false);
+  assert.equal(blocked('/q%3Fx', '/q?x'), false);
+
+  // Genuinely-encoded octets still compare, in either case of hex.
+  assert.equal(blocked('/my%20page', '/my%20page'), true);
+  assert.equal(blocked('/caf%c3%a9', '/caf%C3%A9'), true);
+  assert.equal(blocked('/caf%C3%A9', '/café'), true);
+
+  // And normalisation must not make unrelated paths collide.
+  assert.equal(blocked('/exact', '/other'), false);
+});

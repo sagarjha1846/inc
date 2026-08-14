@@ -190,17 +190,31 @@ export function parseRobots(text) {
  * actually blocks — the dangerous direction, since it tells someone they are
  * visible when they are not.
  *
- * Only non-ASCII octets are encoded here. Existing `%XX` escapes are left
- * as-is apart from upper-casing their hex digits, because a percent-encoded
- * reserved character is genuinely distinct from the character itself:
- * decoding `%2F` into `/` would silently turn one path segment into two.
+ * Non-ASCII octets are encoded. Percent-escapes are normalised two ways, and
+ * the difference between them is the whole point:
+ *
+ *   - An *unreserved* character (RFC 3986 §2.3: letters, digits, `-._~`) means
+ *     the same thing encoded or not, so it is decoded. `Disallow: /%7Euser`
+ *     therefore blocks `/~user`, as the site plainly intended.
+ *   - A *reserved* character is genuinely distinct from its escape and keeps it,
+ *     with the hex upper-cased. Decoding `%2F` into `/` would silently turn one
+ *     path segment into two and start matching rules that were never written.
  */
 function canonicalPath(value) {
   let out = '';
   for (let i = 0; i < value.length; i += 1) {
     const char = value[i];
     if (char === '%' && /^[0-9a-fA-F]{2}$/.test(value.slice(i + 1, i + 3))) {
-      out += `%${value.slice(i + 1, i + 3).toUpperCase()}`;
+      const hex = value.slice(i + 1, i + 3);
+      const decoded = String.fromCharCode(Number.parseInt(hex, 16));
+      // An unreserved character carries no meaning when percent-encoded, so
+      // RFC 3986 makes `%7E` and `~` the same character and RFC 9309 compares
+      // paths after that normalisation. Without decoding them,
+      // `Disallow: /%7Euser` was reported as *not* blocking `/~user` — the
+      // audit telling a site owner a crawler can reach a page it cannot, in the
+      // category it weights most heavily. `~` in particular shows up encoded in
+      // real robots.txt files.
+      out += /[A-Za-z0-9\-._~]/.test(decoded) ? decoded : `%${hex.toUpperCase()}`;
       i += 2;
     } else if (char.charCodeAt(0) > 127) {
       // encodeURIComponent handles surrogate pairs; take the whole code point.
