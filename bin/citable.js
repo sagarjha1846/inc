@@ -250,6 +250,36 @@ async function resolveTier(key) {
   return resolved;
 }
 
+/**
+ * Write an artifact, or say plainly why it could not be written.
+ *
+ * The audit has already run and succeeded by this point, so the failure is
+ * always about the path: a directory that does not exist, a name that is a
+ * directory, a read-only location. Those surfaced as
+ * "citable: unexpected error: Error: ENOENT: no such file or directory" —
+ * a Node internal, on a documented flag, for the most foreseeable typo there
+ * is, and labelled "unexpected" by the program that should have expected it.
+ *
+ * Exits 1 rather than 2: the invocation was valid, the filesystem refused.
+ */
+async function write(target, contents) {
+  try {
+    await writeFile(target, contents, 'utf8');
+    process.stderr.write(`citable: wrote ${target}\n`);
+  } catch (error) {
+    const reason = {
+      ENOENT: 'the directory does not exist',
+      EISDIR: 'that path is a directory',
+      EACCES: 'permission denied',
+      EPERM: 'permission denied',
+      ENOSPC: 'no space left on the device',
+      EROFS: 'the filesystem is read-only',
+    }[error && error.code] || (error && error.message) || 'unknown error';
+    process.stderr.write(`citable: could not write ${target} — ${reason}\n`);
+    process.exit(1);
+  }
+}
+
 async function main() {
   let options;
   try {
@@ -355,8 +385,7 @@ async function main() {
   }
 
   if (options.out) {
-    await writeFile(options.out, output, 'utf8');
-    process.stderr.write(`citable: wrote ${options.out}\n`);
+    await write(options.out, output);
   } else {
     process.stdout.write(`${output}\n`);
   }
@@ -366,8 +395,7 @@ async function main() {
   // like it does.
   if (options.report && options.report !== options.out) {
     const wantsHtml = /\.html?$/i.test(options.report);
-    await writeFile(options.report, wantsHtml ? html : markdown, 'utf8');
-    process.stderr.write(`citable: wrote ${options.report}\n`);
+    await write(options.report, wantsHtml ? html : markdown);
   }
 
   // CI gates.

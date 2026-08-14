@@ -298,3 +298,31 @@ test('valid numeric flags still work, including the edges', async (t) => {
   assert.equal(crawl.code, 0, crawl.stderr);
   assert.equal(JSON.parse(crawl.stdout).pagesAudited, 1);
 });
+
+test('a write that cannot happen says why, in words', async (t) => {
+  // By this point the audit has run and succeeded, so the failure is always
+  // about the path. These surfaced as
+  // "citable: unexpected error: Error: ENOENT: no such file or directory" —
+  // a Node internal, on a documented flag, for the most foreseeable typo there
+  // is, labelled "unexpected" by the program that should have expected it.
+  const url = await startSite(t);
+  const cwd = await workspace(t);
+
+  const missingDir = await cli([url, '--allow-private', '--json', '--out', 'nope/deep/a.json'], { cwd });
+  assert.equal(missingDir.code, 1, 'the invocation was valid, so this is not a usage error');
+  assert.match(missingDir.stderr, /could not write nope\/deep\/a\.json/);
+  assert.match(missingDir.stderr, /directory does not exist/);
+  assert.doesNotMatch(missingDir.stderr, /unexpected error|ENOENT/, 'no raw Node error should reach the user');
+
+  // A path that exists but is a directory is the other common slip.
+  await mkdtemp(path.join(cwd, 'sub'));
+  const isDir = await cli([url, '--allow-private', '--json', '--out', '.'], { cwd });
+  assert.equal(isDir.code, 1);
+  assert.match(isDir.stderr, /is a directory/);
+  assert.doesNotMatch(isDir.stderr, /unexpected error|EISDIR/);
+
+  // --report goes through the same path, so it must behave the same way.
+  const report = await cli([url, '--allow-private', '--json', '--report', 'nope/deep/r.md'], { cwd });
+  assert.equal(report.code, 1);
+  assert.match(report.stderr, /could not write nope\/deep\/r\.md/);
+});
