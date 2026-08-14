@@ -353,7 +353,12 @@ function checkAccess(ctx) {
   const suppressing = [];
   for (const entry of scopes) {
     const found = [];
-    if (/\bnoindex\b/.test(entry.text)) found.push('noindex');
+    // `none` is defined as exactly "noindex, nofollow", so a page carrying it is
+    // as suppressed as a page can be. Matching only the literal word `noindex`
+    // missed it entirely and reported "no snippet-suppressing robots
+    // directives" — a clean bill for a page no engine will index or cite, which
+    // is the most consequential thing this check could get wrong.
+    if (/\bnoindex\b/.test(entry.text) || /\bnone\b/.test(entry.text)) found.push('noindex');
     if (/\bnosnippet\b/.test(entry.text)) found.push('nosnippet');
     if (/\bnoarchive\b/.test(entry.text)) found.push('noarchive');
     if (/max-snippet\s*:\s*0\b/.test(entry.text)) found.push('max-snippet:0');

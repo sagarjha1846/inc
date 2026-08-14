@@ -109,6 +109,20 @@ const COMPANION_STATES = [
     sitemap: { found: false, body: '', status: 404, url: 's' },
     llms: { found: true, body: 'thin file with no heading or links', status: 200, url: 'l' },
   },
+  // A malformed product token, so the informational finding is covered by the
+  // invariants below. It was added without a scenario that fires it, which meant
+  // the well-formedness checks never saw it at all.
+  {
+    robots: { found: true, body: 'User-agent: GPTBot/1.0\nDisallow: /\n\nUser-agent: *\nAllow: /\n', status: 200, url: 'r' },
+    sitemap: { found: false, body: '', status: 404, url: 's' },
+    llms: { found: false, body: '', status: 404, url: 'l' },
+  },
+  // A fetch that failed rather than 404ing, which is a different finding again.
+  {
+    robots: { found: false, body: '', status: 0, error: 'ECONNRESET', url: 'r' },
+    sitemap: { found: false, body: '', status: 0, error: 'ECONNRESET', url: 's' },
+    llms: { found: false, body: '', status: 0, error: 'ECONNRESET', url: 'l' },
+  },
 ];
 
 /** Every page crossed with every companion-file state. */
@@ -152,7 +166,18 @@ test('every finding is well-formed', () => {
       // The scorer divides by these, so a NaN here silently poisons the score.
       assert.ok(Number.isFinite(item.earned), `${item.id} earned must be finite`);
       assert.ok(Number.isFinite(item.max), `${item.id} max must be finite`);
-      assert.ok(item.max > 0, `${item.id} max must be positive`);
+      // `max: 0` is the one legitimate exception: a purely informational
+      // finding, reporting something true about the site whose effect on
+      // visibility is genuinely unknown. Such a finding must score exactly
+      // nothing, so it cannot move the headline in either direction — an
+      // informational check that quietly withheld points would be asserting the
+      // verdict it exists because nobody can give.
+      if (item.max === 0) {
+        assert.equal(item.earned, 0, `${item.id} is informational, so it must not score`);
+        assert.notEqual(item.severity, 'pass', `${item.id} scores nothing, so it is not a pass`);
+      } else {
+        assert.ok(item.max > 0, `${item.id} max must be positive`);
+      }
       assert.ok(item.earned >= 0 && item.earned <= item.max, `${item.id} earned ${item.earned} out of range 0..${item.max}`);
 
       // A passing check must award full marks. Otherwise a report can show
@@ -682,4 +707,32 @@ test('every optional-file check separates "absent" from "could not check"', asyn
     assert.doesNotMatch(missing.title, /could not be checked/i, `${id}: a 404 is an answer`);
     assert.match(missing.title, /^No /, `${id}: and it should say the file is absent`);
   }
+});
+
+test('content="none" is the same suppression as noindex', () => {
+  // `none` is defined as exactly "noindex, nofollow". Matching only the literal
+  // word `noindex` missed it, so a page no engine will index or cite came back
+  // "No snippet-suppressing robots directives" — a clean bill, and the most
+  // consequential thing this check could get wrong, since crawler access is the
+  // heaviest category and this is total suppression rather than partial.
+  const withMeta = (tag, headers = {}) => directives(tag, headers);
+
+  for (const tag of ['<meta name="robots" content="none">', '<meta name="robots" content="NONE">']) {
+    const finding = withMeta(tag);
+    assert.equal(finding.severity, 'critical', `${tag} should be critical`);
+    assert.match(finding.title, /noindex/);
+  }
+
+  // The header spelling carries the same meaning.
+  const header = withMeta('', { 'x-robots-tag': 'none' });
+  assert.equal(header.severity, 'critical');
+
+  // And the word must still only count as a directive where one can appear.
+  // Prose containing "none" is not a robots rule, which is what keeps this from
+  // becoming a false positive on ordinary pages.
+  assert.equal(withMeta('<meta name="description" content="none of this is a directive">').severity, 'pass');
+  assert.equal(withMeta('<meta name="robots" content="index, follow">').severity, 'pass');
+
+  // `nofollow` on its own suppresses nothing about indexing or snippets.
+  assert.equal(withMeta('<meta name="robots" content="nofollow">').severity, 'pass');
 });
