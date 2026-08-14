@@ -326,3 +326,30 @@ test('a write that cannot happen says why, in words', async (t) => {
   assert.equal(report.code, 1);
   assert.match(report.stderr, /could not write nope\/deep\/r\.md/);
 });
+
+test('the --fail-on count does not understate what a truncated tier hides', async (t) => {
+  // The gate's verdict is always right — findings are ranked severity-first, so
+  // the worst one is shown at any tier and the gate fires whenever one
+  // qualifies. The count is what truncation affected: the free tier reported
+  // "3 finding(s) at or above low" for a page with sixteen, in the CI log where
+  // somebody decides how urgent this is.
+  const url = await startSite(t);
+  const secret = 'cli-failon-signing-secret-32-chars';
+  const { issueKey } = await import('../src/core/license.js');
+  const { key } = await issueKey({ email: 'buyer@test.co', secret, days: 0 });
+
+  const free = await cli([url, '--allow-private', '--no-color', '--fail-on', 'low']);
+  assert.equal(free.code, 1, 'the gate still fires');
+  assert.match(free.stderr, /at least \d+ finding\(s\) at or above "low"/);
+
+  const pro = await cli([url, '--allow-private', '--no-color', '--key', key, '--fail-on', 'low'], {
+    env: { CITABLE_LICENSE_SECRET: secret },
+  });
+  assert.equal(pro.code, 1);
+  assert.doesNotMatch(pro.stderr, /at least/, 'a complete list reports an exact count');
+
+  // And the exact count must exceed the truncated one, or the hedge is pointless.
+  const exact = Number(pro.stderr.match(/(\d+) finding\(s\)/)[1]);
+  const shown = Number(free.stderr.match(/at least (\d+)/)[1]);
+  assert.ok(exact > shown, `pro saw ${exact}, free showed ${shown} — the hedge should be doing work`);
+});

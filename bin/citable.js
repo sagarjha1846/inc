@@ -335,6 +335,9 @@ async function main() {
   let diff = null;
   let worstScore;
   let findings = [];
+  // Whether `findings` is the complete set or a tier-truncated view of it. The
+  // --fail-on gate reports a count, and a truncated count understates.
+  let findingsTruncated = false;
 
   try {
     if (options.site) {
@@ -366,6 +369,7 @@ async function main() {
       const result = await auditUrl(options.url, audit);
       worstScore = result.score;
       findings = result.issues;
+      findingsTruncated = (result.issuesWithheld || 0) > 0;
 
       // Baseline mode replaces the normal single-page output: what the caller
       // asked for is the delta, not another snapshot.
@@ -444,7 +448,13 @@ async function main() {
     }
     const triggered = findings.filter((issue) => SEVERITY_RANK[issue.severity] <= threshold);
     if (triggered.length) {
-      process.stderr.write(`citable: ${triggered.length} finding(s) at or above "${options.failOn}"\n`);
+      // The gate's verdict is always right: findings are ranked severity-first,
+      // so the worst one is shown at any tier and the gate fires whenever one
+      // qualifies. The count is what truncation affects — on the free tier this
+      // said "3 finding(s)" for a page with nineteen, understating the problem
+      // in the CI log where somebody decides how urgent it is.
+      const count = findingsTruncated ? `at least ${triggered.length}` : String(triggered.length);
+      process.stderr.write(`citable: ${count} finding(s) at or above "${options.failOn}"\n`);
       process.exit(1);
     }
   }
