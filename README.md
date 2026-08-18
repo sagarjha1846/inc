@@ -189,6 +189,14 @@ Or use the action:
     baseline: baseline.json      # optional
     fail-on-regression: 'true'
     report: audit.html
+
+# `report` writes the file into the runner's own workspace, which is torn down
+# with the job — upload it or it is gone the moment the job ends.
+- uses: actions/upload-artifact@v4
+  if: always()                   # capture the report on a failing run too
+  with:
+    name: audit-report
+    path: audit.html
 ```
 
 ### As a library
