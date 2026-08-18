@@ -28,7 +28,7 @@ import {
 } from './html.js';
 import { AI_CRAWLERS, CITATION_CRAWLERS, crawlerMatrix, parseRobots } from './robots.js';
 import { registrableDomain } from './fetch.js';
-import { LLMS_PLACEHOLDER_MARKER } from './generate.js';
+import { CONTENT_SCHEMA_TYPES, LLMS_PLACEHOLDER_MARKER } from './generate.js';
 
 /** Category weights sum to 100 — the headline score is a straight percentage. */
 export const CATEGORIES = {
@@ -955,8 +955,7 @@ function checkSchema(ctx) {
   );
 
   // Content-type schema.
-  const contentTypes = ['article', 'blogposting', 'newsarticle', 'faqpage', 'howto', 'product', 'softwareapplication', 'webpage', 'techarticle', 'qapage', 'recipe', 'course', 'event', 'service'];
-  const hasContentSchema = contentTypes.some((type) => types.has(type));
+  const hasContentSchema = CONTENT_SCHEMA_TYPES.some((type) => types.has(type));
   out.push(
     finding({
       id: 'content-schema',
@@ -964,7 +963,7 @@ function checkSchema(ctx) {
       severity: hasContentSchema ? 'pass' : 'medium',
       title: hasContentSchema ? 'Page-type schema present' : 'No page-type schema (Article, FAQPage, HowTo, Product…)',
       detail: hasContentSchema
-        ? `Declared as ${[...types].filter((type) => contentTypes.includes(type)).join(', ')}, which tells engines how to treat the content.`
+        ? `Declared as ${[...types].filter((type) => CONTENT_SCHEMA_TYPES.includes(type)).join(', ')}, which tells engines how to treat the content.`
         : 'Typing the page tells engines what kind of answer it can serve. FAQPage and HowTo in particular map straight onto the question formats users ask.',
       fix: hasContentSchema ? null : 'Add the schema.org type that matches this page, with its required fields populated.',
       earned: hasContentSchema ? 4 : 0,

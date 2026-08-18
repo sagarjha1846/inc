@@ -335,6 +335,29 @@ test('an unparseable date is ignored rather than emitted', () => {
   assert.match(note, /default to today/, 'and the fallback is disclosed');
 });
 
+test('a content type checks.js already accepts is not redundantly re-generated', () => {
+  // checks.js's content-schema finding and generateJsonLd's hasContentType
+  // guard are supposed to agree on "does this page already declare what kind
+  // of content it is" — they used two independently retyped lists, and
+  // generateJsonLd's was missing seven types checks.js recognised (Recipe,
+  // Event, Course, Service, QAPage, WebPage, SoftwareApplication). A page
+  // typed as one of those passed the checks.js finding but still got a
+  // redundant Article node appended here, contradicting the note this
+  // function returns when graph.length is empty ("Existing structured data
+  // already covers publisher and page type").
+  for (const type of ['Recipe', 'Event', 'Course', 'Service', 'QAPage', 'WebPage', 'SoftwareApplication']) {
+    const html = `<!doctype html><html lang="en"><head><title>A page about widgets</title>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"${type}","name":"Widget page","publisher":{"@type":"Organization","name":"Acme"}}</script>
+</head><body><main><h1>W</h1><p>${PROSE}</p></main></body></html>`;
+    const ctx = context(html);
+    assert.ok(ctx.schemaTypes.has(type.toLowerCase()), `fixture did not actually declare ${type} — test would be vacuous`);
+
+    const { markup, note } = generateJsonLd(ctx);
+    assert.equal(markup, null, `${type}: should generate nothing when the page already declares its content type`);
+    assert.match(note, /already covers publisher and page type/, `${type}: note should say nothing more is needed`);
+  }
+});
+
 test('publishing the starter llms.txt unedited is reported, not blessed', () => {
   // The starter ships placeholder links — /about, /docs, /changelog — that most
   // sites do not have. Published as-is it satisfies every shape test (an H1, a

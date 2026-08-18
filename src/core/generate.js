@@ -82,6 +82,28 @@ function oneLine(value, limit = 120) {
 export const LLMS_PLACEHOLDER_MARKER = 'Replace the placeholder links below';
 
 /**
+ * Schema.org `@type`s specific enough to count as "this page declares what
+ * kind of content it is" — the same list checks.js's `content-schema` finding
+ * uses to decide whether that check passes, and generateJsonLd uses below to
+ * decide whether to add another `Article` node on top of one already there.
+ *
+ * Shared for the same reason LLMS_PLACEHOLDER_MARKER is: two independently
+ * retyped copies drift the first time one gets a type added and the other
+ * doesn't, and the failure is silent. It already had: checks.js recognised
+ * Recipe, Event, Course, Service, QAPage, WebPage and SoftwareApplication as
+ * a declared content type; this list did not, so a Pro user with any of
+ * those got a redundant generated Article block appended next to the type
+ * their page already had — the exact case the `!hasContentType` guard below
+ * exists to skip, and the note this function returns when it does
+ * ("Existing structured data already covers publisher and page type") was
+ * simply wrong for those seven types.
+ */
+export const CONTENT_SCHEMA_TYPES = [
+  'article', 'blogposting', 'newsarticle', 'faqpage', 'howto', 'product',
+  'softwareapplication', 'webpage', 'techarticle', 'qapage', 'recipe', 'course', 'event', 'service',
+];
+
+/**
  * A starter llms.txt built from the page's real title, description and
  * internal link structure.
  */
@@ -226,9 +248,7 @@ export function generateJsonLd(ctx) {
     });
   }
 
-  const hasContentType = ['article', 'blogposting', 'techarticle', 'newsarticle', 'faqpage', 'howto', 'product'].some((type) =>
-    existingTypes.has(type),
-  );
+  const hasContentType = CONTENT_SCHEMA_TYPES.some((type) => existingTypes.has(type));
   if (!hasContentType) {
     graph.push({
       '@type': 'Article',
