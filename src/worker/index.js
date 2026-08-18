@@ -124,6 +124,12 @@ export default {
       case '/llms.txt':
         return new Response(ownLlms(url.origin), { headers: { 'content-type': 'text/plain; charset=utf-8' } });
 
+      // robots.txt declares this URL (see ownRobots below) — the sitemap
+      // check we run against every other site would flag a declared-but-404
+      // sitemap as a finding, so the auditor's own site needs to serve one.
+      case '/sitemap.xml':
+        return new Response(ownSitemap(url.origin), { headers: { 'content-type': 'application/xml; charset=utf-8' } });
+
       default:
         return json({ error: 'not_found' }, 404);
     }
@@ -245,6 +251,14 @@ function ownRobots(origin) {
   lines.push(`Sitemap: ${origin}/sitemap.xml`);
   lines.push('');
   return lines.join('\n');
+}
+
+function ownSitemap(origin) {
+  const paths = ['/', '/demo'];
+  const urls = paths
+    .map((path) => `  <url>\n    <loc>${origin}${path}</loc>\n  </url>`)
+    .join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
 
 function ownLlms(origin) {

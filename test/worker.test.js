@@ -78,6 +78,18 @@ test('the auditor’s own robots.txt allows every citation crawler', async () =>
   assert.match(body, /Sitemap: https:\/\/citable\.test\/sitemap\.xml/);
 });
 
+test('the sitemap the auditor declares in its own robots.txt actually exists', async () => {
+  // The sitemap check citable runs against every other site treats a
+  // declared-but-unreachable /sitemap.xml as a "No sitemap found" finding —
+  // the auditor's own site should not fail the exact check it sells.
+  const response = await worker.fetch(new Request('https://citable.test/sitemap.xml'), env);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /xml/);
+  const body = await response.text();
+  assert.match(body, /<loc>https:\/\/citable\.test\/<\/loc>/);
+  assert.match(body, /<loc>https:\/\/citable\.test\/demo<\/loc>/);
+});
+
 test('the auditor publishes its own llms.txt', async () => {
   const response = await worker.fetch(new Request('https://citable.test/llms.txt'), env);
   const body = await response.text();
