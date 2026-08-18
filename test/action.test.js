@@ -317,6 +317,33 @@ test('the action fails loudly when site and baseline are both set', async (t) =>
   assert.match(run.stderr, /cannot be combined with --site/);
 });
 
+test('a crafted input cannot execute shell commands on the runner', async (t) => {
+  // GitHub substitutes every `${{ }}` expression into the script's *text*
+  // before bash ever parses it — this is not a shell argument the way
+  // `process.argv` would be, it is more source code. `url`, `report`,
+  // `baseline`, `min-score` and `fail-on` used to be spliced in that way
+  // directly; only `key` went through env (as CITABLE_KEY). A workflow can
+  // easily feed `url` from something it doesn't fully control — a
+  // PR-derived preview link is the obvious case — so this input alone was
+  // enough to run arbitrary commands on the runner.
+  //
+  // Proven with the same technique runAction() already uses to simulate
+  // GitHub's substitution: closing the array literal early, running an
+  // arbitrary command, then reopening a dummy array so the rest of the
+  // script still parses. Before the fix this created the marker file; now
+  // it can only ever be treated as an inert (if malformed) URL string.
+  const site = await startSite();
+  t.after(() => site.stop());
+  const cwd = await workspace(t);
+  const marker = path.join(cwd, 'INJECTED');
+  const payload = `https://a.test/") ; touch ${marker} ; args=("${site.url}`;
+
+  await runAction({ url: payload }, { cwd });
+
+  const { existsSync } = await import('node:fs');
+  assert.equal(existsSync(marker), false, 'a crafted url input executed a shell command on the runner');
+});
+
 test('the action documents the constraint it now enforces', async () => {
   // A composite action's input descriptions are the only documentation most
   // people read, and a rule enforced in the CLI but absent from them is one a
