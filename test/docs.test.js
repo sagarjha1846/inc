@@ -214,17 +214,29 @@ test('the pre-push hook is present, executable and documented', () => {
 /* --------------------------------------------------- licensing setup docs */
 
 test('every document that mentions the legacy secret also teaches --keygen', async () => {
-  // Three separate documents told a seller to set up licensing with
-  // LICENSE_SECRET alone: the README quickstart, the deploy guide, and the
-  // key-issuing script's own header. Following any of them produces a deploy
-  // where keys work in the web UI and nowhere else — a buyer running the CLI
-  // gets the free tier despite having paid.
+  // Four separate files told a seller to set up licensing with LICENSE_SECRET
+  // alone: the README quickstart, the deploy guide, the key-issuing script's
+  // own header, and — found after those four were already fixed and this
+  // guard already existed — wrangler.toml's own top-of-file instructions,
+  // which is the file someone is actually looking at when they run
+  // `wrangler deploy`. Following any of them produces a deploy where keys
+  // work in the web UI and nowhere else — a buyer running the CLI gets the
+  // free tier despite having paid.
   //
   // The secret is still legitimate for the Worker, so it cannot simply be
   // banned. What must not happen again is a document naming it without naming
   // the step that makes keys usable by the people who buy them.
+  //
+  // The file list is enumerated by hand rather than by a repo-wide scan,
+  // because CITABLE_LICENSE_SECRET appears throughout test/ as an ordinary
+  // fixture value with no instructional intent, and a glob would flag those
+  // as false positives. That trade means this list itself is where the gap
+  // lives: wrangler.toml was missed once already despite being exactly the
+  // kind of file this test exists to catch. Any new file whose job is to walk
+  // someone through deploying or configuring the product belongs here too —
+  // not just prose docs.
   const { readFileSync } = await import('node:fs');
-  const files = ['README.md', 'docs/DEPLOY.md', 'docs/MONETIZATION.md', 'scripts/issue-key.mjs'];
+  const files = ['README.md', 'docs/DEPLOY.md', 'docs/MONETIZATION.md', 'scripts/issue-key.mjs', 'wrangler.toml'];
 
   for (const name of files) {
     const body = readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');

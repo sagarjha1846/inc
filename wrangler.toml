@@ -3,9 +3,23 @@
 # This fits inside the Workers free tier (100k requests/day), which is the
 # whole point: the product costs nothing to run until it earns something.
 #
+#   node scripts/issue-key.mjs --keygen      # once — creates the key that signs licences
 #   npx wrangler login
-#   npx wrangler secret put LICENSE_SECRET     # random 32+ chars, never commit
 #   npx wrangler deploy
+#
+# --keygen writes the private half to license.private.json (gitignored — back it
+# up) and prints a public line to paste into src/core/license.js and commit.
+# That public half ships in the package and is what a buyer's own machine
+# verifies a key against — until it is committed, every Pro key is refused with
+# no_public_key_configured, and a buyer who paid gets nothing for it.
+#
+# LICENSE_SECRET signs the older, symmetric CTB1 format. It still works on this
+# Worker, but a key signed with it only verifies where that same secret is also
+# present — the CLI on a buyer's own machine is never in that state, so a buyer
+# sent one gets the free tier despite having paid. Set it only to keep keys
+# already sold under that scheme working; do not start there for new keys.
+#
+#   npx wrangler secret put LICENSE_SECRET     # random 32+ chars, never commit
 #
 # CHECKOUT_URL is the payment link buyers are sent to. It is not a secret.
 
