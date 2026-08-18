@@ -267,6 +267,27 @@ test('the private signing key never appears in what is sent to a buyer', async (
   assert.doesNotMatch(ledger, new RegExp(priv.d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
+test('the files --keygen writes are actually ignored by git', async () => {
+  // Every other guard in this file is about what the script prints or
+  // appends. This one is about the file itself: `license.private.json` and
+  // `licenses.ndjson` sit in the real working tree, not a sandbox, and if
+  // either were ever committed the private signing key or a customer ledger
+  // would be pushed to a public repository. Unlike most bugs this does not
+  // announce itself — the business looks fine right up until someone notices
+  // every Pro key can be forged, or a customer's email address turns up in
+  // git history. `.gitignore` naming the file is not the same guarantee as
+  // git actually ignoring it, so this checks the real mechanism rather than
+  // grepping the ignore file's text.
+  const { execFile } = await import('node:child_process');
+  const check = (file) => new Promise((resolve) => {
+    execFile('git', ['check-ignore', '-q', file], { cwd: ROOT }, (error) => resolve(error === null));
+  });
+
+  for (const file of ['license.private.json', 'licenses.ndjson', '.dev.vars', '.env']) {
+    assert.equal(await check(file), true, `${file} must be ignored by git — check .gitignore`);
+  }
+});
+
 test('--find re-derives a portable key identically', async (t) => {
   // Deterministic signing is why Ed25519 was chosen over ECDSA: re-issuing a
   // *different* key would leave the buyer's original still live.
