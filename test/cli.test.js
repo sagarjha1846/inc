@@ -126,6 +126,22 @@ test('default output is human-readable and honours --no-color', async (t) => {
   assert.doesNotMatch(result.stdout, /\[/, '--no-color must emit no escape sequences');
 });
 
+test('colour defaults off when stdout is not a terminal, without needing --no-color', async (t) => {
+  // Node only ever sets `stdout.isTTY` to `true` on a real terminal — for a
+  // pipe or a redirect-to-file it is `undefined`, never `false`. A default of
+  // `isTTY !== false` is therefore true in both cases, so `citable site.com
+  // > report.txt` or `citable site.com | less` — no `--no-color` in sight —
+  // filled the file/pipe with raw ANSI escape codes. execFile's stdout is
+  // exactly such a pipe, which is what this exercises without needing a PTY.
+  const url = await startSite(t);
+  const result = await cli([url, '--allow-private']);
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /\/100/);
+  // eslint-disable-next-line no-control-regex
+  assert.doesNotMatch(result.stdout, /\x1b\[/, 'non-TTY stdout must not carry ANSI escape codes by default');
+});
+
 test('--json emits parseable JSON and nothing else on stdout', async (t) => {
   const url = await startSite(t);
   const result = await cli([url, '--allow-private', '--json']);

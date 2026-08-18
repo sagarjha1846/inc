@@ -100,7 +100,11 @@ function parseArgs(argv) {
     minScore: null,
     failOn: null,
     verbose: false,
-    color: process.stdout.isTTY !== false && !process.env.NO_COLOR,
+    // `isTTY` is `true` on a real terminal and `undefined` everywhere else —
+    // Node never sets it to `false` — so a `!== false` check is true in both
+    // cases and leaves colour on when stdout is redirected to a file or piped
+    // to another process, filling the output with raw ANSI escape codes.
+    color: process.stdout.isTTY === true && !process.env.NO_COLOR,
     timeout: 15000,
     // Safe here in a way it is not in the hosted worker: the CLI runs on the
     // developer's own machine, so pointing it at localhost is the intended

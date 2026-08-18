@@ -290,7 +290,7 @@ git config core.hooksPath .githooks
 ```
 
 ```bash
-node --test                    # 340 tests, no install step
+node --test                    # 341 tests, no install step
 node bin/citable.js --help
 npx wrangler dev               # hosted UI at localhost:8787, /demo for a sample report
 ```
