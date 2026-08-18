@@ -420,6 +420,29 @@ test('a directive addressed to one crawler binds only that crawler', () => {
   }
 });
 
+test('a directive addressed to an AI crawler is recognized as scoped, not ignored', () => {
+  // KNOWN_BOT_META gates which meta names are read as robots directives at
+  // all (see checkAccess's comment on why: <meta name="description"
+  // content="how to use noindex"> must not be mistaken for a directive). It
+  // was built from classic SEO-era bots — Googlebot, Bingbot, Yandex — and
+  // never extended to the AI crawlers this product's entire registry
+  // (AI_CRAWLERS) exists to check. A page with <meta name="GPTBot"
+  // content="noindex"> is an increasingly ordinary way to opt out of AI
+  // indexing without touching search rankings, and the unrecognized name
+  // meant this check dropped the tag entirely — reporting "No
+  // snippet-suppressing robots directives" (a clean pass) for a page that
+  // had explicitly told GPTBot not to index it. Confirmed live against the
+  // pre-fix code before writing this: it scored 6/6 "pass".
+  for (const finding of [
+    directives('<meta name="GPTBot" content="noindex">'),
+    directives('<meta name="perplexitybot" content="noindex">'),
+    directives('', { 'x-robots-tag': 'ClaudeBot: noindex' }),
+  ]) {
+    assert.equal(finding.severity, 'medium', `expected a scoped finding, got: ${JSON.stringify(finding)}`);
+    assert.match(finding.title, /only$/);
+  }
+});
+
 test('an unscoped directive still wins when a scoped one is also present', () => {
   const finding = directives('<meta name="robots" content="noindex"><meta name="googlebot" content="nosnippet">');
   assert.equal(finding.severity, 'critical');

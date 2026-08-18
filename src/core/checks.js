@@ -63,6 +63,18 @@ function finding(input) {
  * Meta names that address one crawler rather than all of them. Anything else
  * named in a `<meta>` is not a robots directive at all, so it must not be read
  * as one — `<meta name="description" content="how to use noindex">` is prose.
+ *
+ * The AI crawler tokens come from the registry rather than being retyped here,
+ * because a hand-maintained second copy is exactly how this list ended up
+ * covering Googlebot, Bingbot and Yandex but not GPTBot, ClaudeBot or
+ * PerplexityBot — the crawlers this product exists to check. A site that
+ * scopes a directive to one of them, e.g. `<meta name="GPTBot"
+ * content="noindex">`, is an increasingly ordinary way to opt a page out of
+ * AI indexing without touching search rankings; missing it meant this check
+ * reported "no snippet-suppressing robots directives" for a page that had
+ * told GPTBot, specifically, not to index it — a clean bill of health that
+ * was wrong in exactly the direction the check exists to prevent (see the
+ * `none`-directive comment below, which is the same failure mode).
  */
 const KNOWN_BOT_META = new Set([
   'googlebot',
@@ -75,6 +87,7 @@ const KNOWN_BOT_META = new Set([
   'baiduspider',
   'yandex',
   'applebot',
+  ...AI_CRAWLERS.map((crawler) => crawler.token.toLowerCase()),
 ]);
 
 /**
