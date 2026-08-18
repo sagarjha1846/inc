@@ -287,3 +287,24 @@ test('every flag the CLI accepts is one --help mentions', async () => {
     `accepted but absent from --help: ${undocumented.join(', ')} — document them or remove them`,
   );
 });
+
+test('npm run keygen actually runs --keygen', async () => {
+  // package.json's "keygen" script was `node scripts/issue-key.mjs` with no
+  // flag, so the one shortcut literally named for the command this whole
+  // session's setup guard exists to surface printed usage text instead of
+  // creating a signing pair — and exited 0, so a setup script chaining
+  // `npm run keygen && …` would silently proceed as if it had worked.
+  //
+  // Checked statically rather than by spawning `npm run keygen`, which would
+  // generate real key material into license.private.json and need the same
+  // careful cleanup as running it by hand — a static check on the wiring is
+  // both faster and cannot leave that file behind by accident.
+  const { readFileSync } = await import('node:fs');
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.ok(pkg.scripts && pkg.scripts.keygen, 'package.json should define a keygen script');
+  assert.match(
+    pkg.scripts.keygen,
+    /--keygen\b/,
+    `"keygen" script is "${pkg.scripts.keygen}" — it must invoke --keygen, not just launch the tool`,
+  );
+});
