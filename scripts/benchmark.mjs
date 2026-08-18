@@ -52,8 +52,22 @@ async function main() {
   const listPath = flag(argv, 'list');
   if (!listPath) usage('--list is required');
   const outBase = flag(argv, 'out', 'study');
-  const concurrency = Math.max(1, Math.min(8, Number.parseInt(flag(argv, 'concurrency', '3'), 10) || 3));
-  const timeoutMs = Number.parseInt(flag(argv, 'timeout', '15000'), 10) || 15000;
+
+  // Number.parseInt reads only as much of the string as looks like a number
+  // and discards the rest, so `--timeout 1500o` silently ran with 1500ms
+  // instead of failing — the same class of typo bin/citable.js's nextNumber()
+  // and issue-key.mjs's strictInt() already exist to catch elsewhere in this
+  // product. The `|| fallback` on top made it worse for `--concurrency 0`,
+  // which parsed clean to 0 and then silently fell back to 3 rather than
+  // saying a concurrency of zero audits nothing.
+  const strictInt = (raw, name) => {
+    const trimmed = String(raw).trim();
+    if (!/^\d+$/.test(trimmed)) usage(`--${name} must be a whole number, got "${raw}"`);
+    return Number.parseInt(trimmed, 10);
+  };
+  const concurrency = Math.max(1, Math.min(8, strictInt(flag(argv, 'concurrency', '3'), 'concurrency')));
+  const timeoutMs = strictInt(flag(argv, 'timeout', '15000'), 'timeout');
+  if (timeoutMs < 1) usage('--timeout must be at least 1ms');
   const allowPrivate = argv.includes('--allow-private');
 
   const targets = (await readFile(listPath, 'utf8'))

@@ -134,3 +134,39 @@ test('the study generator reports accurate aggregates', async (t) => {
   assert.ok(spa, 'expected the client-rendered fixture to score badly');
   assert.ok(spa.findings.some((finding) => finding.id === 'js-rendered' && finding.severity === 'critical'));
 });
+
+test('a typo in --concurrency or --timeout is refused, not silently reinterpreted', async (t) => {
+  // Number.parseInt reads only as much of the string as looks like a number
+  // and discards the rest, so "--timeout 1500o" (a slip for 1500, or 15000)
+  // used to run with 1500ms rather than failing — the same class of bug
+  // fixed in bin/citable.js's nextNumber() and issue-key.mjs's strictInt().
+  // Neither audits a real site, so no fixture server is needed: the
+  // validation runs before the target list is even read for --timeout, and
+  // before any fetch for --concurrency.
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'citable-bench-typo-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const listPath = path.join(dir, 'domains.txt');
+  await writeFile(listPath, 'https://example.test/\n');
+
+  const run = (args) =>
+    new Promise((resolve) => {
+      const child = spawn(process.execPath, ['scripts/benchmark.mjs', '--list', listPath, ...args], { cwd: ROOT });
+      let stderr = '';
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk;
+      });
+      child.on('close', (code) => resolve({ code, stderr }));
+    });
+
+  const badConcurrency = await run(['--concurrency', '2x']);
+  assert.equal(badConcurrency.code, 2);
+  assert.match(badConcurrency.stderr, /--concurrency must be a whole number/);
+
+  const badTimeout = await run(['--timeout', '1500o']);
+  assert.equal(badTimeout.code, 2);
+  assert.match(badTimeout.stderr, /--timeout must be a whole number/);
+
+  const zeroTimeout = await run(['--timeout', '0']);
+  assert.equal(zeroTimeout.code, 2);
+  assert.match(zeroTimeout.stderr, /--timeout must be at least 1ms/);
+});
