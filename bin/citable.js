@@ -323,6 +323,29 @@ async function main() {
     process.stderr.write('citable: --fail-on-regression needs --baseline to compare against.\n');
     process.exit(2);
   }
+  // There is no HTML renderer for a comparison — only renderComparison
+  // (terminal) and renderComparisonMarkdown exist. `--html` used to be
+  // silently ignored here, falling back to the ANSI terminal renderer with
+  // no explanation, and `--report x.html` failed later with a raw Node
+  // TypeError from writeFile(path, null, 'utf8') — "could not write x.html —
+  // The 'data' argument must be of type string...". Both are refused up
+  // front instead, for the same reason `--site` refuses `--baseline`: a
+  // silent fallback or an internal error is worse than telling the caller
+  // what they asked for does not exist yet.
+  if (options.baseline && options.html) {
+    process.stderr.write(
+      'citable: --baseline output is a score/crawler/category diff — there is no HTML renderer for it yet.\n'
+      + '         Drop --html for JSON, Markdown or the default terminal diff.\n',
+    );
+    process.exit(2);
+  }
+  if (options.baseline && /\.html?$/i.test(options.report || '')) {
+    process.stderr.write(
+      'citable: --report needs a non-HTML path in --baseline mode — there is no HTML renderer for a diff yet.\n'
+      + '         Use a .md path instead:  --report diff.md\n',
+    );
+    process.exit(2);
+  }
 
   if (!options.url) {
     process.stdout.write(HELP);

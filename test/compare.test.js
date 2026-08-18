@@ -267,6 +267,50 @@ test('--fail-on-regression without --baseline is a usage error', async () => {
   assert.match(result.stderr, /needs --baseline/);
 });
 
+test('--baseline combined with --html is a usage error, not a silent fallback', async () => {
+  // compare.js has no HTML renderer for a diff — only renderComparison
+  // (terminal) and renderComparisonMarkdown. --html here used to be silently
+  // ignored, falling back to the terminal renderer with nothing telling the
+  // caller their flag did nothing.
+  const result = await new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      ['bin/citable.js', 'https://example.com', '--baseline', '/nonexistent/baseline.json', '--html'],
+      { cwd: ROOT },
+    );
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.on('close', (code) => resolve({ code, stderr }));
+  });
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /no HTML renderer/);
+});
+
+test('--baseline combined with --report *.html is a usage error, not a crash', async () => {
+  // Confirmed live before this test existed: writeFile(path, null, 'utf8')
+  // throws "The 'data' argument must be of type string...", surfaced to the
+  // caller as "citable: could not write audit.html — The 'data' argument
+  // must be of type string or an instance of Buffer, TypedArray, or
+  // DataView. Received null" — a Node internal for a documented, foreseeable
+  // combination of flags.
+  const result = await new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      ['bin/citable.js', 'https://example.com', '--baseline', '/nonexistent/baseline.json', '--report', 'diff.html'],
+      { cwd: ROOT },
+    );
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.on('close', (code) => resolve({ code, stderr }));
+  });
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /no HTML renderer/);
+});
+
 test('a missing baseline file exits with a usage error', async () => {
   const result = await new Promise((resolve) => {
     const child = spawn(
