@@ -161,7 +161,11 @@ The key id is printed when the key is issued and recorded in `licenses.ndjson`. 
 honours the same list via `CITABLE_REVOKED_KEYS`.
 
 A revoked key does not error — it silently drops to the free tier, with the reason
-reported in `licenseWarning`.
+surfaced differently per surface: the Worker's `/api/audit` response carries it in a
+`licenseWarning` field, and the CLI writes it to stderr
+(`license key not accepted (revoked); continuing on the free tier`) rather than adding a
+field to its `--json` output. A reader building against the CLI who greps its JSON for
+`licenseWarning` will not find it there.
 
 Annual keys expire on their own, which limits the blast radius of a leak you never
 notice.
