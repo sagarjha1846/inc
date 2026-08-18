@@ -180,10 +180,24 @@ ${'-'.repeat(66)}
     return index === -1 ? fallback : argv[index + 1];
   };
 
-  const days = Number.parseInt(flag('days', '0'), 10);
-  if (!Number.isFinite(days)) usage('--days must be a number');
+  // `Number.parseInt` reads only as much of the string as looks like a
+  // number and silently discards the rest, so a `0`/`o` keyboard-neighbour
+  // typo does not fail — it mints a real key for the wrong term. `--days
+  // 36o` (a slip for `360`) parsed as `36`: a valid, working key, quietly
+  // expiring in a twelfth of what was intended, with nothing in the output
+  // distinguishing it from a deliberate choice. The `|| 1` fallback on
+  // `--seats` was worse: it only caught `0` and non-numeric input, so
+  // `--seats -3` parsed clean and issued a licence for negative three seats.
+  const strictInt = (raw, name) => {
+    const trimmed = String(raw).trim();
+    if (!/^-?\d+$/.test(trimmed)) usage(`--${name} must be a whole number, got "${raw}"`);
+    return Number.parseInt(trimmed, 10);
+  };
+
+  const days = strictInt(flag('days', '0'), 'days');
   const plan = flag('plan', 'pro');
-  const seats = Number.parseInt(flag('seats', '1'), 10) || 1;
+  const seats = strictInt(flag('seats', '1'), 'seats');
+  if (seats < 1) usage(`--seats must be at least 1, got ${seats}`);
 
   const { key, payload } = await issueKey({ email, plan, days, seats, secret, privateKey });
 

@@ -104,6 +104,33 @@ test('--days controls expiry, and a typo cannot mint a lifetime key', async (t) 
   assert.equal(negative.reason, 'expired');
 });
 
+test('a keyboard-neighbour typo in --days is refused, not silently reinterpreted', async (t) => {
+  // Number.parseInt reads as much of the string as looks like a number and
+  // discards the rest without complaint. "36o" -- an easy slip for "360", 0
+  // and o sit next to each other -- used to parse as 36: a real, working key
+  // that expires in a twelfth of what was intended, with nothing in the
+  // output distinguishing it from a deliberate --days 36.
+  const dir = await scriptIn(t);
+  const result = await run(dir, ['a@b.co', '--days', '36o']);
+  assert.notEqual(result.code, 0, 'a typo must not exit clean');
+  assert.match(result.stderr, /--days must be a whole number/);
+  assert.doesNotMatch(result.stdout, /CTB[12]\./, 'no key should be issued for an unparseable term');
+});
+
+test('--seats rejects a negative count instead of issuing a licence for it', async (t) => {
+  // Number.parseInt('-3', 10) || 1 only falls back on 0 or NaN -- a negative
+  // number is truthy, so it parsed clean and issued a licence for -3 seats.
+  const dir = await scriptIn(t);
+  const negative = await run(dir, ['a@b.co', '--seats', '-3']);
+  assert.notEqual(negative.code, 0, 'negative seats must not exit clean');
+  assert.match(negative.stderr, /--seats must be at least 1/);
+  assert.doesNotMatch(negative.stdout, /CTB[12]\./, 'no key should be issued for negative seats');
+
+  const typo = await run(dir, ['a@b.co', '--seats', '3x']);
+  assert.notEqual(typo.code, 0, 'a typo must not exit clean');
+  assert.match(typo.stderr, /--seats must be a whole number/);
+});
+
 test('a key does not verify against a different secret', async (t) => {
   const dir = await scriptIn(t);
   const key = keyFrom((await run(dir, ['a@b.co'])).stdout);
