@@ -183,7 +183,13 @@ test('no button offers to sell what the page cannot sell', async (t) => {
 
   for (const name of ['index.html', 'demo.html']) {
     const html = await readFile(path.join(dir, name), 'utf8');
-    const buttons = [...html.matchAll(/<a class="cta[^"]*" href="([^"]+)">([^<]+)<\/a>/g)];
+    // Excludes <script>: the client-side upgrade banner builds its own button
+    // markup at runtime from string literals (see the CHECKOUT_HREF backtick
+    // fix in ui.js), and those literals contain the same `<a class="cta...">`
+    // text as *source code*, which this regex would otherwise mistake for a
+    // real anchor with a literal, unparseable href like `' + esc(...) + '`.
+    const markupOnly = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+    const buttons = [...markupOnly.matchAll(/<a class="cta[^"]*" href="([^"]+)">([^<]+)<\/a>/g)];
     assert.ok(buttons.length > 0, `${name} should offer some way to buy`);
 
     for (const [, href, label] of buttons) {
@@ -229,9 +235,13 @@ test('a real checkout URL takes precedence over the request path', async (t) => 
   const html = await readFile(path.join(dir, 'index.html'), 'utf8');
   assert.match(html, /href="https:\/\/checkout\.example\/buy"/);
   assert.match(html, /Get a Pro key/, 'with a real checkout the button sells again');
-  // The `.cta-request` CSS rule is always in the stylesheet; what must be absent
-  // is an anchor carrying it.
-  assert.doesNotMatch(html, /<a class="cta cta-request"/);
+  // The `.cta-request` CSS rule is always in the stylesheet, and the client
+  // script's runtime button-builder always carries the *source text*
+  // `<a class="cta cta-request"` as one of its string-literal branches now
+  // (see the CHECKOUT_HREF backtick fix in ui.js) — neither is a real anchor.
+  // What must be absent is one in the static markup.
+  const markupOnly = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+  assert.doesNotMatch(markupOnly, /<a class="cta cta-request"/);
 });
 
 test('the FAQ schema says exactly what the page says', async (t) => {

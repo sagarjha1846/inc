@@ -53,6 +53,29 @@ test('the rendered page leaves no un-interpolated placeholders in static markup'
   assert.match(html, /Citable checks \d+ AI crawlers/);
 });
 
+test('a checkout URL containing a backtick cannot break out of the client script', () => {
+  // buyButton()'s HTML used to be spliced directly into the upgrade banner's
+  // JS template literal inside <script> via an *unescaped* `${buyButton(...)}`
+  // — evaluated server-side at render time, not client-side at runtime.
+  // CHECKOUT_URL is a Worker env var, or on the static build a repository
+  // variable a contributor with write access could set (see
+  // site-build.test.js), and safeLink()/escapeAttr() only escape for an HTML
+  // attribute — neither touches a backtick, because nothing upstream of them
+  // expected to land inside one. A CHECKOUT_URL containing a backtick closed
+  // the template literal early and turned the rest of that line into
+  // executable script for every visitor. Confirmed with `node --check` before
+  // fixing: the emitted <script> failed to parse at all.
+  const malicious = 'https://checkout.example/buy?x=`;alert(document.domain);//';
+  const html = renderApp({ priceUrl: malicious });
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+  const clientScript = scripts[scripts.length - 1];
+
+  assert.doesNotThrow(() => new Function(clientScript), 'the emitted <script> must remain valid JavaScript');
+  // The value must cross into script as an inert, safely double-quoted JS
+  // string — not as raw text sitting inside a backtick template literal.
+  assert.match(clientScript, /const CHECKOUT_HREF = "https:\/\/checkout\.example\/buy\?x=`;alert\(document\.domain\);\/\/";/);
+});
+
 test('/demo serves a full sample report with no network call', async () => {
   const response = await worker.fetch(new Request('https://citable.test/demo'), env);
   assert.equal(response.status, 200);
@@ -296,7 +319,14 @@ test('an unconfigured checkout does not render a dead buy button', async () => {
 test('a configured checkout renders real buy buttons', async () => {
   const html = await (await worker.fetch(new Request('https://citable.test/'), env)).text();
   assert.match(html, /href="https:\/\/checkout\.example\/buy"/);
-  assert.doesNotMatch(html, /Checkout not configured/);
+  // "Checkout not configured" is the disabled-state label, and it legitimately
+  // appears as dead-branch source text inside the client <script> now (see
+  // the backtick-injection fix above: the upgrade banner's buyButton() moved
+  // client-side, so all three of its branches are present in the script
+  // regardless of which one actually runs). What must not happen is that
+  // label rendering into the *visible* static markup.
+  const markupOnly = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+  assert.doesNotMatch(markupOnly, /Checkout not configured/);
 });
 
 test('/api/health reports whether the deploy is actually sellable', async () => {

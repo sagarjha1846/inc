@@ -373,6 +373,26 @@ const go = document.getElementById('go');
 const esc = (value) => String(value == null ? '' : value)
   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+// checkoutHref/requestHref were already validated and HTML-attribute-escaped
+// server-side by safeLink(), for splicing straight into static HTML — but the
+// upgrade banner below needs them a second time, inside a JS template literal
+// in *this* script. escapeAttr() never touched backticks, because nothing
+// upstream of it expected to land inside one: a CHECKOUT_URL (a Worker env
+// var, or on the static build a repository variable a contributor with write
+// access could set) containing a backtick closed the template literal early
+// and ran arbitrary script in every visitor's browser. JSON.stringify is safe
+// here regardless of content — it double-quotes and escapes for exactly this
+// job — so the values cross into script as inert strings, and the markup is
+// built at runtime with the same esc() every other renderer here uses.
+const CHECKOUT_HREF = ${JSON.stringify(checkoutHref)};
+const REQUEST_HREF = ${JSON.stringify(requestHref)};
+
+function buyButton(label, requestLabel){
+  if (CHECKOUT_HREF) return '<a class="cta" href="' + esc(CHECKOUT_HREF) + '">' + esc(label) + '</a>';
+  if (REQUEST_HREF) return '<a class="cta cta-request" href="' + esc(REQUEST_HREF) + '">' + esc(requestLabel) + '</a>';
+  return '<span class="cta cta-disabled" role="note">Checkout not configured</span>';
+}
+
 function barColor(ratio){ return ratio >= .8 ? CATEGORY_COLORS.high : ratio >= .5 ? CATEGORY_COLORS.mid : CATEGORY_COLORS.low; }
 
 function ring(score){
@@ -443,7 +463,7 @@ function renderResult(result){
     <div class="lock">
       <p><strong>\${result.issuesWithheld} more finding\${result.issuesWithheld===1?'':'s'} found on this page.</strong><br>
       Pro unlocks all \${result.issuesTotal}, plus a generated robots.txt patch, llms.txt, JSON-LD and FAQ schema built from this page.</p>
-      ${buyButton('Unlock the full report — $49', 'Request a key — $49')}
+      \${buyButton('Unlock the full report — $49', 'Request a key — $49')}
     </div>\` : '';
 
   out.innerHTML = \`
