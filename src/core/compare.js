@@ -12,6 +12,8 @@
  * this catches immediately.
  */
 
+import { mdText } from './report.js';
+
 const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, pass: 4 };
 
 /** A finding's identity across runs — the check that fired, not its wording. */
@@ -282,10 +284,10 @@ export function renderComparisonMarkdown(diff) {
   };
 
   if (!diff.truncated) {
-    list('Introduced', diff.introduced, (issue) => `\`${issue.severity}\` ${issue.title}`);
-    list('Worsened', diff.worsened, (issue) => `${issue.title} (${issue.from} → ${issue.to})`);
-    list('Fixed', diff.fixed, (issue) => issue.title);
-    list('Improved', diff.improved, (issue) => `${issue.title} (${issue.from} → ${issue.to})`);
+    list('Introduced', diff.introduced, (issue) => `\`${issue.severity}\` ${mdText(issue.title)}`);
+    list('Worsened', diff.worsened, (issue) => `${mdText(issue.title)} (${issue.from} → ${issue.to})`);
+    list('Fixed', diff.fixed, (issue) => mdText(issue.title));
+    list('Improved', diff.improved, (issue) => `${mdText(issue.title)} (${issue.from} → ${issue.to})`);
   }
 
   return lines.join('\n');

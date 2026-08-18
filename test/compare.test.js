@@ -186,6 +186,34 @@ test('a malformed baseline is rejected with a useful message', () => {
   assert.throws(() => compareAudits(null, { score: 5 }), /not an audit result/);
 });
 
+test('a finding title quoting the audited page cannot inject a live link into the diff', () => {
+  // Finding titles can quote page content (an H1, a lang value, a robots.txt
+  // token) verbatim — see report.js's mdText() fix. renderComparisonMarkdown
+  // builds its own Markdown from the same finding objects via a separate
+  // code path (introduced/worsened/fixed/improved), so it needs the same
+  // escaping independently rather than inheriting it from report.js.
+  const payload = 'Guide [click here](https://evil.test/pwn) to widgets';
+  const base = {
+    url: 'https://a.test/',
+    score: 80,
+    grade: 'B',
+    categories: {},
+    crawlers: [],
+    issues: [],
+  };
+  const now = {
+    ...base,
+    score: 70,
+    issues: [{ id: 'h1', severity: 'high', title: payload, max: 4, earned: 0 }],
+  };
+
+  const diff = compareAudits(base, now);
+  assert.equal(diff.introduced.length, 1, 'fixture did not actually produce an introduced finding — test would be vacuous');
+
+  const md = renderComparisonMarkdown(diff);
+  assert.doesNotMatch(md, /(?<!\\)\]\(https:\/\/evil\.test/, 'finding title became a live Markdown link');
+});
+
 test('the CLI writes a baseline, compares against it, and exits 1 on regression', async (t) => {
   const site = await startMutableSite(ALLOW_ALL);
   const dir = await mkdtemp(path.join(os.tmpdir(), 'citable-baseline-'));

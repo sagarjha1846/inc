@@ -50,12 +50,21 @@ function fenced(text, info = '') {
  * becomes a clickable link sitting inside what reads as this product's own
  * upsell line.
  *
+ * The same risk applies to finding text that quotes the audited page: an H1,
+ * a `lang` attribute, a canonical URL, a robots.txt token or crawler name.
+ * Those are not evidence quotes (which go through `fenced()` and stay inert
+ * inside a code fence) — they're interpolated into a finding's `title` or
+ * `detail` as plain prose, so a page whose H1 is
+ * `Free money [click here](https://evil.example)` would otherwise render a
+ * live link inside a report a user hands to a client. Exported so
+ * `compare.js`'s Markdown renderer can neutralise the same fields in a diff.
+ *
  * CommonMark's own backslash-escape mechanism is enough: prefixing a special
  * character with `\` removes its meaning without otherwise touching the text,
  * so `Acme <b>Digital</b>` still reads as "Acme <b>Digital</b>" rather than
  * being stripped or mangled.
  */
-function mdText(value) {
+export function mdText(value) {
   return String(value ?? '').replace(/[\\`*_[\]<>]/g, (char) => `\\${char}`);
 }
 
@@ -161,7 +170,7 @@ export function renderMarkdown(result, options = {}) {
     lines.push('| --- | --- | --- | --- |');
     for (const crawler of result.crawlers) {
       lines.push(
-        `| \`${crawler.token}\` | ${crawler.surface} | ${crawler.purpose} | ${crawler.allowed ? 'Allowed' : `**Blocked** (${crawler.rule || 'group default'})`} |`,
+        `| \`${crawler.token}\` | ${crawler.surface} | ${crawler.purpose} | ${crawler.allowed ? 'Allowed' : `**Blocked** (${mdText(crawler.rule) || 'group default'})`} |`,
       );
     }
     lines.push('');
@@ -174,20 +183,20 @@ export function renderMarkdown(result, options = {}) {
     lines.push('');
   }
   result.issues.forEach((issue, index) => {
-    lines.push(`### ${index + 1}. [${SEVERITY_LABEL[issue.severity]}] ${issue.title}`);
+    lines.push(`### ${index + 1}. [${SEVERITY_LABEL[issue.severity]}] ${mdText(issue.title)}`);
     lines.push('');
-    lines.push(issue.detail);
+    lines.push(mdText(issue.detail));
     lines.push('');
     if (issue.evidence) {
       lines.push(...fenced(String(issue.evidence).slice(0, 1200)));
       lines.push('');
     }
     if (issue.impact) {
-      lines.push(`**Costs you:** ${issue.impact}`);
+      lines.push(`**Costs you:** ${mdText(issue.impact)}`);
       lines.push('');
     }
     if (issue.fix) {
-      lines.push(`**Fix:** ${issue.fix}`);
+      lines.push(`**Fix:** ${mdText(issue.fix)}`);
       lines.push('');
     }
     // A finding worth nothing is informational — the training-crawler note
@@ -207,7 +216,7 @@ export function renderMarkdown(result, options = {}) {
   if (result.passes && result.passes.length) {
     lines.push('## Already correct');
     lines.push('');
-    for (const item of result.passes) lines.push(`- **${item.title}** — ${item.detail}`);
+    for (const item of result.passes) lines.push(`- **${mdText(item.title)}** — ${mdText(item.detail)}`);
     lines.push('');
   }
 
@@ -269,7 +278,7 @@ export function renderSiteMarkdown(rollup, options = {}) {
     lines.push('| Issue | Severity | Pages affected | Fix |');
     lines.push('| --- | --- | --- | --- |');
     for (const issue of rollup.sitewideIssues) {
-      lines.push(`| ${issue.title} | ${SEVERITY_LABEL[issue.severity]} | ${issue.pages} | ${issue.fix || '—'} |`);
+      lines.push(`| ${mdText(issue.title)} | ${SEVERITY_LABEL[issue.severity]} | ${issue.pages} | ${issue.fix ? mdText(issue.fix) : '—'} |`);
     }
     lines.push('');
     if (rollup.sitewideIssuesWithheld > 0) {
