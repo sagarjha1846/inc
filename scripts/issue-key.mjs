@@ -202,8 +202,19 @@ ${'-'.repeat(66)}
   const { key, payload } = await issueKey({ email, plan, days, seats, secret, privateKey });
 
   // The ledger is the record of what was sold — needed to honour refunds and
-  // to populate REVOKED_KEY_IDS if a key leaks.
-  await appendFile(LEDGER, `${JSON.stringify({ ...payload, issuedAt: new Date().toISOString() })}\n`, 'utf8');
+  // to populate REVOKED_KEY_IDS if a key leaks. It carries customer emails
+  // (see the .gitignore entry and DEPLOY.md, both of which call that out), so
+  // it gets the same 600 mode --keygen already gives license.private.json —
+  // `mode` on appendFile only applies the moment the file is created, so a
+  // plain `'utf8'` third argument left a brand-new ledger at the platform
+  // default (644, world-readable) on the first key ever issued. Existing
+  // ledgers created before this fix keep whatever mode they already have;
+  // this only closes the gap for a ledger that does not exist yet.
+  await appendFile(
+    LEDGER,
+    `${JSON.stringify({ ...payload, issuedAt: new Date().toISOString() })}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  );
 
   process.stdout.write(`
 Key issued for ${email}

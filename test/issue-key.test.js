@@ -175,6 +175,21 @@ test('the ledger records what was sold', async (t) => {
   assert.equal(after.length, 2);
 });
 
+test('the ledger is created readable only by its owner, like the signing key', async (t) => {
+  // licenses.ndjson carries customer emails (see the .gitignore entry and
+  // DEPLOY.md, both of which call that out) and --keygen already gives
+  // license.private.json mode 600 for the same reason. appendFile's `mode`
+  // option only applies the moment a file is *created* — a plain 'utf8'
+  // third argument left a brand-new ledger at the platform default (644,
+  // world-readable on a shared machine) on the very first key ever issued.
+  const dir = await scriptIn(t);
+  await run(dir, ['owner-only@example.com']);
+
+  const { stat } = await import('node:fs/promises');
+  const mode = (await stat(path.join(dir, 'licenses.ndjson'))).mode & 0o777;
+  assert.equal(mode, 0o600, `licenses.ndjson should be mode 600, was ${mode.toString(8)}`);
+});
+
 test('the signing secret never appears in the output', async (t) => {
   // The output is pasted into an email. A secret leaking there hands every
   // recipient the ability to mint their own keys.
