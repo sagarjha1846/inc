@@ -434,6 +434,29 @@ test('max-snippet is not mistaken for a crawler prefix', () => {
   assert.equal(directives('', { 'x-robots-tag': 'max-snippet:-1' }).severity, 'pass');
 });
 
+test('two separate X-Robots-Tag headers are scoped correctly after the fetch layer joins them', () => {
+  // A server — commonly a CDN or reverse proxy that appends rather than
+  // replaces — can legitimately send X-Robots-Tag twice: once unscoped, once
+  // addressed to a named crawler. The Fetch API's Headers object joins
+  // repeated headers with ", " before this code ever sees a single string, so
+  // `noindex` + `googlebot: noarchive` arrives as one value:
+  // "noindex, googlebot: noarchive". Confirmed against the real Headers class
+  // rather than assumed, since the whole risk is in that join behaviour.
+  const headers = new Headers();
+  headers.append('x-robots-tag', 'noindex');
+  headers.append('x-robots-tag', 'googlebot: noarchive');
+  const joined = headers.get('x-robots-tag');
+  assert.equal(joined, 'noindex, googlebot: noarchive', 'pin what the platform actually produces');
+
+  const finding = directives('', { 'x-robots-tag': joined });
+  // The unscoped noindex must still decide the verdict...
+  assert.equal(finding.severity, 'critical');
+  assert.match(finding.title, /noindex/);
+  // ...and the scoped directive must not be silently absorbed into it or lost.
+  assert.match(finding.evidence, /X-Robots-Tag: noindex/);
+  assert.match(finding.evidence, /X-Robots-Tag \(googlebot\): noarchive/);
+});
+
 test('the word noindex in ordinary prose is not a directive', () => {
   const finding = directives('<meta name="description" content="A guide to using noindex and nosnippet correctly.">');
   assert.equal(finding.severity, 'pass');
