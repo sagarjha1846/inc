@@ -140,10 +140,24 @@ function bar(ratio) {
 
 /** Full Markdown report for one page. */
 export function renderMarkdown(result, options = {}) {
-  const { brand = 'Citable', includeGenerated = true } = options;
+  const { brand = 'Citable', includeGenerated = true, preparedFor = null, preparedBy = null } = options;
   const lines = [];
 
   lines.push(`# AI Visibility Audit — ${mdText(result.url)}`);
+  // renderHtml shows the same two fields "under the page URL" — this is the
+  // Markdown equivalent of that placement. Silently dropping them here was a
+  // real gap: the README documents `--site --markdown --out audit.md` as "A
+  // Markdown report you can hand to a client", and report.js's own docstring
+  // calls the Markdown report "a deliverable in its own right", so a --brand
+  // that works in Markdown but a --prepared-for that quietly does nothing is
+  // exactly the kind of flag-that-looks-like-it-worked this product elsewhere
+  // refuses to ship.
+  if (preparedFor || preparedBy) {
+    const who = [preparedFor && `Prepared for ${mdText(preparedFor)}`, preparedBy && `by ${mdText(preparedBy)}`]
+      .filter(Boolean)
+      .join(' · ');
+    lines.push(`*${who}*`);
+  }
   lines.push('');
   lines.push(`**Score: ${result.score}/100 (${result.grade})** · ${result.verdict}`);
   lines.push('');
@@ -269,10 +283,18 @@ export function renderMarkdown(result, options = {}) {
 
 /** Site-level rollup across many pages. */
 export function renderSiteMarkdown(rollup, options = {}) {
-  const { brand = 'Citable' } = options;
+  const { brand = 'Citable', preparedFor = null, preparedBy = null } = options;
   const lines = [];
 
   lines.push('# Site-wide AI Visibility Audit');
+  // See renderMarkdown's comment on this same pair: dropped silently here
+  // previously, despite renderSiteHtml showing them for the identical report.
+  if (preparedFor || preparedBy) {
+    const who = [preparedFor && `Prepared for ${mdText(preparedFor)}`, preparedBy && `by ${mdText(preparedBy)}`]
+      .filter(Boolean)
+      .join(' · ');
+    lines.push(`*${who}*`);
+  }
   lines.push('');
   lines.push(`**Average score: ${rollup.averageScore}/100** across ${rollup.pagesAudited} page(s)${rollup.pagesFailed ? ` (${rollup.pagesFailed} failed to fetch)` : ''}.`);
   lines.push('');

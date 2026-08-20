@@ -103,6 +103,26 @@ test('branding options are applied', async () => {
   assert.doesNotMatch(html, /Citable — AI Visibility Audit/);
 });
 
+test('--prepared-for and --prepared-by are not silently dropped from Markdown', async () => {
+  // renderHtml already showed these "under the page URL"; renderMarkdown
+  // simply never read the options at all, so citable client.com --site
+  // --markdown --out audit.md --prepared-for "Client Co" — a combination the
+  // README's own "hand to a client" framing invites — produced a report with
+  // no trace the flag had been passed, and no error saying why.
+  const result = await auditFixture(HOSTILE);
+  const rollup = { pagesAudited: 1, pagesFailed: 0, averageScore: result.score, worst: result, best: result, sitewideIssues: [], pages: [result] };
+  const options = { preparedFor: 'Client Co', preparedBy: '<script>alert(1)</script> A. Consultant' };
+
+  for (const markdown of [renderMarkdown(result, options), renderSiteMarkdown(rollup, options)]) {
+    assert.match(markdown, /Prepared for Client Co/);
+    // The value is also untrusted the same way `brand` is (a natural build on
+    // this library is a dashboard where a client sets their own display
+    // name), so it has to survive CommonMark-escaped rather than raw.
+    assert.match(markdown, /by \\<script\\>alert\(1\)\\<\/script\\> A\. Consultant/);
+    assert.doesNotMatch(markdown, /(?<!\\)<script>alert/, 'preparedBy became live markup');
+  }
+});
+
 test('branding values are escaped too', async () => {
   const result = await auditFixture(HOSTILE);
   const html = renderHtml(result, { brand: '<script>alert(1)</script>', preparedFor: '"><b>x' });
