@@ -39,9 +39,9 @@ OPTIONS
                       follows the extension: .html gives HTML, anything else
                       gives Markdown.
 
-REPORT BRANDING (for HTML reports you hand to a client)
+REPORT BRANDING (for HTML and Markdown reports you hand to a client)
   --brand <name>      Replaces "Citable" in the report header.
-  --accent <color>    Accent colour, any CSS colour (default #0d9488).
+  --accent <color>    Accent colour, any CSS colour (default #0d9488). HTML only.
   --prepared-for <s>  Client name, shown under the page URL.
   --prepared-by <s>   Your name or agency, shown under the page URL.
   --baseline <file>   Compare against an earlier --json result and report what
