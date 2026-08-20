@@ -457,3 +457,33 @@ test('the audited page itself cannot inject into the Markdown report describing 
     assert.doesNotMatch(doc, /(?<!\\)\]\(https:\/\/evil\.test/, 'page content became a live Markdown link');
   }
 });
+
+test('the audited URL itself cannot inject into the Markdown report title or pages table', () => {
+  // The URL is not page content quoted by a check — it is the audited page's
+  // own address, which the site fully controls: a redirect target, or a
+  // sitemap <loc> entry in --site mode. `renderMarkdown` puts it straight
+  // into the H1, and `renderSiteMarkdown`'s Pages table puts one row's worth
+  // of it per page. A path like `/promo/[SALE](https://evil.test/phish)` is
+  // an ordinary, valid URL path segment and a complete Markdown link once it
+  // lands in either unescaped.
+  const malUrl = 'https://acme.test/promo/[SALE](https://evil.test/phish)';
+  const base = {
+    url: malUrl, requestedUrl: malUrl, tier: 'pro', grade: 'F', score: 20,
+    verdict: 'bad', fetchedAt: new Date().toISOString(),
+    http: { status: 200, responseMs: 5 }, stats: { words: 10 },
+    categories: {}, crawlers: [], counts: {}, issues: [], issuesTotal: 0, issuesWithheld: 0, passes: [],
+  };
+
+  const pageMarkdown = renderMarkdown(base, { includeGenerated: false });
+  assert.doesNotMatch(pageMarkdown, /(?<!\\)\]\(https:\/\/evil\.test/, 'the audited URL became a live link in the report title');
+
+  const rollup = {
+    pagesAudited: 1, pagesFailed: 1, averageScore: 20, worst: base, best: base, sitewideIssues: [],
+    pages: [
+      { ...base, score: 20, issuesTotal: 0 },
+      { url: malUrl, score: null, error: 'fetch failed: [pwn](https://evil.test/error)' },
+    ],
+  };
+  const siteMarkdown = renderSiteMarkdown(rollup);
+  assert.doesNotMatch(siteMarkdown, /(?<!\\)\]\(https:\/\/evil\.test/, 'the audited URL or fetch error became a live link in the Pages table');
+});

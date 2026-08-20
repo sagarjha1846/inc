@@ -59,6 +59,13 @@ function fenced(text, info = '') {
  * live link inside a report a user hands to a client. Exported so
  * `compare.js`'s Markdown renderer can neutralise the same fields in a diff.
  *
+ * The audited URL itself is no different: it is whatever the page redirected
+ * to or the sitemap declared, both under the audited site's control, and it
+ * heads every report's title and — in the site-wide rollup — every row of
+ * the Pages table. A path like `/promo/[SALE](https://evil.example)` is a
+ * valid URL segment and a complete, live Markdown link once it lands in
+ * prose unescaped.
+ *
  * CommonMark's own backslash-escape mechanism is enough: prefixing a special
  * character with `\` removes its meaning without otherwise touching the text,
  * so `Acme <b>Digital</b>` still reads as "Acme <b>Digital</b>" rather than
@@ -136,7 +143,7 @@ export function renderMarkdown(result, options = {}) {
   const { brand = 'Citable', includeGenerated = true } = options;
   const lines = [];
 
-  lines.push(`# AI Visibility Audit — ${result.url}`);
+  lines.push(`# AI Visibility Audit — ${mdText(result.url)}`);
   lines.push('');
   lines.push(`**Score: ${result.score}/100 (${result.grade})** · ${result.verdict}`);
   lines.push('');
@@ -298,10 +305,10 @@ export function renderSiteMarkdown(rollup, options = {}) {
   lines.push('| --- | --- | --- |');
   for (const page of rollup.pages) {
     if (typeof page.score !== 'number') {
-      lines.push(`| ${page.url} | — | fetch failed: ${page.error} |`);
+      lines.push(`| ${mdText(page.url)} | — | fetch failed: ${mdText(page.error)} |`);
       continue;
     }
-    lines.push(`| ${page.url} | ${page.score}/100 (${page.grade}) | ${page.issuesTotal} |`);
+    lines.push(`| ${mdText(page.url)} | ${page.score}/100 (${page.grade}) | ${page.issuesTotal} |`);
   }
   lines.push('');
   lines.push('---');
