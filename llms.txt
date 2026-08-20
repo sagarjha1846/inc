@@ -1,0 +1,19 @@
+# Citable
+
+> Citable audits whether AI answer engines — ChatGPT, Claude, Perplexity and Google AI Overviews — can crawl, read and cite a web page, and generates the exact files needed to fix what it finds.
+
+## Core pages
+
+- [Home](./index.html): What Citable checks and why it matters.
+- [Live demo report](./demo.html): A complete Pro-tier audit of an example page.
+- [Sample client report](./sample-report.html): The single-page deliverable.
+- [Sample site report](./sample-site-report.html): The whole-site deliverable.
+- [Source and install](https://github.com/sagarjha1846/inc): `npx github:sagarjha1846/inc#claude/monetizable-project-ideas-o45uuc yoursite.com`
+
+## What it checks
+
+- Crawler access: whether robots.txt permits the crawlers that produce citations.
+- Readable content: whether the answer text exists in HTML without JavaScript.
+- Answer structure: whether a model can lift a clean answer from the page.
+- Structured data: whether the page states its facts machine-readably.
+- Metadata and authority: title, description, canonical, authorship and freshness.

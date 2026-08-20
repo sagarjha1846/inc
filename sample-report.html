@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Visibility Audit — https://northwind.example/pricing</title>
+<style>
+  :root { --accent:#0d9488; --ink:#16202b; --muted:#5c6675; --line:#e2e7ee; --panel:#f7f9fb; }
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);line-height:1.62;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px;-webkit-font-smoothing:antialiased}
+  .page{max-width:820px;margin:0 auto;padding:48px 28px 72px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em}
+  .brandbar{display:flex;justify-content:space-between;align-items:baseline;
+    border-bottom:2px solid var(--accent);padding-bottom:10px;margin-bottom:28px;flex-wrap:wrap;gap:8px}
+  .brandbar .name{font-weight:700;letter-spacing:.16em;text-transform:uppercase;font-size:12px;color:var(--accent)}
+  .brandbar .date{font-size:12px;color:var(--muted)}
+  h1{font-size:25px;line-height:1.25;margin:0 0 6px;letter-spacing:-.01em;word-break:break-word}
+  .url{color:var(--muted);font-size:13px;margin:0 0 26px;word-break:break-all}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);
+    margin:40px 0 14px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+  h3{font-size:16px;margin:0 0 7px;display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+  p{margin:0 0 10px}
+  .lede{color:var(--muted);margin-bottom:16px}
+  .hero{display:flex;gap:26px;align-items:center;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;padding:22px;flex-wrap:wrap}
+  .hero .verdict{flex:1 1 300px;min-width:0}
+  .hero .verdict p{margin:0;font-size:17px;font-weight:600;line-height:1.45}
+  .facts{margin-top:12px;font-size:13px;color:var(--muted)}
+  .facts span{display:inline-block;margin-right:16px;white-space:nowrap}
+  table{width:100%;border-collapse:collapse;margin-bottom:8px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600}
+  .cats th{font-weight:600;width:38%}
+  .cats .blurb{display:block;font-weight:400;font-size:12px;color:var(--muted);margin-top:2px}
+  .barcell{width:44%}
+  .track{display:block;height:9px;background:#e8edf3;border-radius:99px;overflow:hidden}
+  .fill{display:block;height:100%;border-radius:99px}
+  .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+  .num .of{color:var(--muted);font-weight:400}
+  .scroll{overflow-x:auto}
+  .ok{color:#15803d} .bad{color:#b91c1c;font-weight:600}
+  .finding{border-left:4px solid var(--line);padding:2px 0 2px 16px;margin:0 0 24px;
+    break-inside:avoid;page-break-inside:avoid}
+  .finding.sev-critical,.finding.sev-high{border-color:#b91c1c}
+  .finding.sev-medium{border-color:#b45309}
+  .finding.sev-low{border-color:#2563eb}
+  .pill{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;
+    padding:3px 8px;border-radius:5px;background:#eef2f7;color:var(--muted)}
+  .sev-critical .pill,.sev-high .pill{background:#fdeaea;color:#b91c1c}
+  .sev-medium .pill{background:#fdf1e0;color:#b45309}
+  .sev-low .pill{background:#e8f0fe;color:#2563eb}
+  .meta{font-size:14px;color:var(--muted)}
+  .meta strong{color:var(--ink)}
+  .fix strong{color:var(--accent)}
+  .points{font-size:12px;color:var(--muted);font-style:italic;margin:0}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+    overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word;margin:8px 0 0}
+  .gen{margin-bottom:26px;break-inside:avoid}
+  .gen h3{font-size:14px;display:block}
+  .gen .note{font-size:13px;color:var(--muted);margin:0}
+  .withheld{background:var(--panel);border:1px dashed var(--line);border-radius:8px;
+    padding:14px 16px;color:var(--muted);font-size:14px}
+  footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);
+    font-size:12px;color:var(--muted)}
+  @media print{
+    .page{padding:0;max-width:none}
+    body{font-size:11.5pt}
+    h2{page-break-after:avoid}
+    pre{white-space:pre-wrap}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="brandbar">
+    <span class="name">Citable — AI Visibility Audit</span>
+    <span class="date">Thu, 01 Jan 2026 00:00:00 GMT</span>
+  </div>
+
+  <h1>Can AI answer engines cite this page?</h1>
+  <p class="url">https://northwind.example/pricing</p>
+
+  <div class="hero">
+    <svg width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Score 69 out of 100">
+      <circle cx="64" cy="64" r="54" fill="none" stroke="#e8edf3" stroke-width="11"/>
+      <circle cx="64" cy="64" r="54" fill="none" stroke="#b45309" stroke-width="11" stroke-linecap="round"
+        stroke-dasharray="339.3" stroke-dashoffset="105.2"
+        transform="rotate(-90 64 64)"/>
+      <text x="64" y="61" text-anchor="middle" font-size="31" font-weight="700" fill="#16202b"
+        font-family="system-ui,sans-serif">69</text>
+      <text x="64" y="80" text-anchor="middle" font-size="11" fill="#5c6675"
+        font-family="system-ui,sans-serif">out of 100 · C</text>
+    </svg>
+    <div class="verdict">
+      <p>Not citable as it stands — 1 blocking issue prevents AI engines from using this page.</p>
+      <div class="facts">
+        <span>HTTP 200</span>
+        <span>214ms</span>
+        <span>718 words server-rendered</span>
+        <span>12 open findings</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>Score breakdown</h2>
+  <table class="cats"><tbody>
+<tr>
+      <th scope="row">Crawler access<span class="blurb">Whether AI crawlers are permitted to fetch the page at all.</span></th>
+      <td class="barcell"><span class="track"><span class="fill" style="width:75%;background:#b45309"></span></span></td>
+      <td class="num">22.5<span class="of">/30</span></td>
+    </tr>
+<tr>
+      <th scope="row">Readable content<span class="blurb">Whether the answer text exists in the HTML without running JavaScript.</span></th>
+      <td class="barcell"><span class="track"><span class="fill" style="width:96%;background:#15803d"></span></span></td>
+      <td class="num">24<span class="of">/25</span></td>
+    </tr>
+<tr>
+      <th scope="row">Answer structure<span class="blurb">Whether the page is shaped so a model can lift a clean answer from it.</span></th>
+      <td class="barcell"><span class="track"><span class="fill" style="width:100%;background:#15803d"></span></span></td>
+      <td class="num">15<span class="of">/15</span></td>
+    </tr>
+<tr>
+      <th scope="row">Structured data<span class="blurb">Machine-readable facts that let an engine attribute and trust the page.</span></th>
+      <td class="barcell"><span class="track"><span class="fill" style="width:0%;background:#b91c1c"></span></span></td>
+      <td class="num">0<span class="of">/15</span></td>
+    </tr>
+<tr>
+      <th scope="row">Metadata<span class="blurb">The title, description and canonical signals used in citations.</span></th>
+      <td class="barcell"><span class="track"><span class="fill" style="width:70%;background:#b45309"></span></span></td>
+      <td class="num">7<span class="of">/10</span></td>
+    </tr>
+<tr>
+      <th scope="row">Authority signals<span class="blurb">Authorship, freshness and sourcing that raise citation confidence.</span></th>
+      <td class="barcell"><span class="track"><span class="fill" style="width:0%;background:#b91c1c"></span></span></td>
+      <td class="num">0<span class="of">/5</span></td>
+    </tr>
+  </tbody></table>
+
+  <h2>Which AI engines can reach this page</h2>
+  <p class="lede">Blocking a <em>training</em> crawler is a content policy. Blocking a <em>citation</em> or <em>live-fetch</em> crawler removes this page from that engine's answers.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Crawler</th><th>Surface</th><th>Purpose</th><th>Status</th></tr></thead>
+    <tbody>
+<tr>
+      <td class="mono">GPTBot</td>
+      <td>ChatGPT</td>
+      <td>training</td>
+      <td class="bad">Blocked — <span class="mono">Disallow: /</span></td>
+    </tr>
+<tr>
+      <td class="mono">OAI-SearchBot</td>
+      <td>ChatGPT Search</td>
+      <td>citation</td>
+      <td class="bad">Blocked — <span class="mono">Disallow: /</span></td>
+    </tr>
+<tr>
+      <td class="mono">ChatGPT-User</td>
+      <td>ChatGPT browsing</td>
+      <td>live-fetch</td>
+      <td class="ok">Allowed</td>
+    </tr>
+<tr>
+      <td class="mono">ClaudeBot</td>
+      <td>Claude</td>
+      <td>training</td>
+      <td class="bad">Blocked — <span class="mono">Disallow: /</span></td>
+    </tr>
+<tr>
+      <td class="mono">Claude-SearchBot</td>
+      <td>Claude search</td>
+      <td>citation</td>
+      <td class="ok">Allowed</td>
+    </tr>
+<tr>
+      <td class="mono">Claude-User</td>
+      <td>Claude browsing</td>
+      <td>live-fetch</td>
+      <td class="ok">Allowed</td>
+    </tr>
+<tr>
+      <td class="mono">PerplexityBot</td>
+      <td>Perplexity</td>
+      <td>citation</td>
+      <td class="bad">Blocked — <span class="mono">Disallow: /</span></td>
+    </tr>
+<tr>
+      <td class="mono">Perplexity-User</td>
+      <td>Perplexity browsing</td>
+      <td>live-fetch</td>
+      <td class="ok">Allowed</td>
+    </tr>
+<tr>
+      <td class="mono">Google-Extended</td>
+      <td>Gemini / AI Overviews grounding</td>
+      <td>training</td>
+      <td class="ok">Allowed</td>
+    </tr>
+<tr>
+      <td class="mono">Applebot-Extended</td>
+      <td>Apple Intelligence</td>
+      <td>training</td>
+      <td class="ok">Allowed</td>
+    </tr>
+<tr>
+      <td class="mono">meta-externalagent</td>
+      <td>Meta AI</td>
+      <td>training</td>
+      <td class="ok">Allowed</td>
+    </tr>
+<tr>
+      <td class="mono">Amazonbot</td>
+      <td>Alexa / Rufus</td>
+      <td>citation</td>
+      <td class="ok">Allowed</td>
+    </tr>
+<tr>
+      <td class="mono">CCBot</td>
+      <td>open datasets</td>
+      <td>training</td>
+      <td class="ok">Allowed</td>
+    </tr>
+<tr>
+      <td class="mono">Bytespider</td>
+      <td>Doubao / TikTok search</td>
+      <td>training</td>
+      <td class="ok">Allowed</td>
+    </tr>
+    </tbody>
+  </table></div>
+
+  <h2>Findings</h2>
+<section class="finding sev-critical">
+    <h3><span class="pill">Critical</span>1. Invisible to ChatGPT Search and Perplexity — blocked by robots.txt</h3>
+    <p>These crawlers are the ones that fetch pages in order to answer live questions. While they are disallowed, this page cannot appear as a citation in the surfaces listed below, no matter how good the content is.</p>
+    <pre>OAI-SearchBot (ChatGPT Search) — blocked by &quot;Disallow: /&quot;
+PerplexityBot (Perplexity) — blocked by &quot;Disallow: /&quot;</pre>
+    <p class="meta"><strong>Costs you:</strong> ChatGPT Search, Perplexity</p>
+    <p class="meta fix"><strong>Fix:</strong> Add explicit Allow rules for these user-agents (see the generated robots.txt patch in this report).</p>
+    <p class="points">Recovers up to 3.8 points</p>
+  </section>
+<section class="finding sev-high">
+    <h3><span class="pill">High</span>2. No JSON-LD structured data</h3>
+    <p>Structured data is how you state facts about the page in a form no model has to infer: who wrote it, what it is about, when it changed, what entity it belongs to. Without it, attribution depends entirely on the engine guessing correctly.</p>
+    
+    <p class="meta"><strong>Costs you:</strong> Weaker entity association and lower citation confidence across every engine.</p>
+    <p class="meta fix"><strong>Fix:</strong> Add a JSON-LD block — the report generates one tailored to this page.</p>
+    <p class="points">Recovers up to 7 points</p>
+  </section>
+<section class="finding sev-medium">
+    <h3><span class="pill">Medium</span>3. No Organization or Person entity</h3>
+    <p>Nothing on the page tells an engine which organisation or person stands behind it, so citations are less likely to name you.</p>
+    
+    
+    <p class="meta fix"><strong>Fix:</strong> Add an Organization node with `name`, `url`, `logo` and `sameAs` links to your official profiles.</p>
+    <p class="points">Recovers up to 4 points</p>
+  </section>
+<section class="finding sev-medium">
+    <h3><span class="pill">Medium</span>4. No page-type schema (Article, FAQPage, HowTo, Product…)</h3>
+    <p>Typing the page tells engines what kind of answer it can serve. FAQPage and HowTo in particular map straight onto the question formats users ask.</p>
+    
+    
+    <p class="meta fix"><strong>Fix:</strong> Add the schema.org type that matches this page, with its required fields populated.</p>
+    <p class="points">Recovers up to 4 points</p>
+  </section>
+<section class="finding sev-medium">
+    <h3><span class="pill">Medium</span>5. Not served over HTTPS</h3>
+    <p>Plain HTTP is downranked or refused by several crawlers and looks untrustworthy as a citation source.</p>
+    
+    
+    <p class="meta fix"><strong>Fix:</strong> Issue a certificate (free via Let’s Encrypt) and redirect HTTP to HTTPS.</p>
+    <p class="points">Recovers up to 1.9 points</p>
+  </section>
+<section class="finding sev-low">
+    <h3><span class="pill">Low</span>6. No canonical URL</h3>
+    <p>No canonical link.</p>
+    
+    
+    <p class="meta fix"><strong>Fix:</strong> Add exactly one self-referencing `&lt;link rel=&quot;canonical&quot;&gt;` so citation credit consolidates on one URL.</p>
+    <p class="points">Recovers up to 2 points</p>
+  </section>
+<section class="finding sev-low">
+    <h3><span class="pill">Low</span>7. No author attribution</h3>
+    <p>Named authorship is a trust signal engines weigh when choosing between competing sources on the same claim.</p>
+    
+    
+    <p class="meta fix"><strong>Fix:</strong> Name the author in visible text and in `author` structured data.</p>
+    <p class="points">Recovers up to 2 points</p>
+  </section>
+<section class="finding sev-low">
+    <h3><span class="pill">Low</span>8. No published or modified date</h3>
+    <p>Engines strongly prefer sources they can date, especially for anything that changes over time. An undated page loses to a dated competitor on identical content.</p>
+    
+    
+    <p class="meta fix"><strong>Fix:</strong> Publish `datePublished` and `dateModified` in structured data and show the date on the page.</p>
+    <p class="points">Recovers up to 2 points</p>
+  </section>
+<section class="finding sev-low">
+    <h3><span class="pill">Low</span>9. No llms.txt published</h3>
+    <p>llms.txt is a plain-Markdown index at your site root that tells models what your site is and which pages matter. Adoption is early, the cost is one file, and it is one of the few levers with no downside.</p>
+    <pre>https://northwind.example/llms.txt → 404</pre>
+    <p class="meta"><strong>Costs you:</strong> Missed orientation for agents that look for it before crawling.</p>
+    <p class="meta fix"><strong>Fix:</strong> Publish the generated llms.txt included in this report at https://yourdomain/llms.txt.</p>
+    <p class="points">Recovers up to 1.9 points</p>
+  </section>
+<section class="finding sev-low">
+    <h3><span class="pill">Low</span>10. Incomplete Open Graph metadata</h3>
+    <p>Several assistants fall back to Open Graph tags when building a source card for your page.</p>
+    
+    
+    <p class="meta fix"><strong>Fix:</strong> Add `og:title`, `og:description`, `og:url` and `og:image`.</p>
+    <p class="points">Recovers up to 1 point</p>
+  </section>
+<section class="finding sev-low">
+    <h3><span class="pill">Low</span>11. No outbound links</h3>
+    <p>Pages that cite external sources read as researched rather than promotional, which raises the odds an engine trusts them.</p>
+    
+    
+    <p class="meta fix"><strong>Fix:</strong> Link to the primary sources, standards or data your claims rest on.</p>
+    <p class="points">Recovers up to 1 point</p>
+  </section>
+<section class="finding sev-low">
+    <h3><span class="pill">Low</span>12. 2 training crawler(s) blocked</h3>
+    <p>This may well be deliberate — blocking training crawlers protects your content from being absorbed into model weights. It does cost you baseline brand recall inside the models themselves. Flagged so the trade-off is a decision, not an accident.</p>
+    <pre>GPTBot (OpenAI) — Disallow: /
+ClaudeBot (Anthropic) — Disallow: /</pre>
+    <p class="meta"><strong>Costs you:</strong> Lower unprompted brand recall when users ask models without live search.</p>
+    <p class="meta fix"><strong>Fix:</strong> No action needed if this is intentional policy.</p>
+    
+  </section>
+  
+
+  <h2>Ready-to-ship fixes</h2>
+  <p class="lede">Each file below is generated from this page. Review, then paste.</p>
+  <div class="gen">
+    <h3>robots.txt — append to your existing file</h3>
+    
+    <pre># --- AI answer-engine access -------------------------------------------
+# Generated by Citable. Append to your existing robots.txt.
+# These crawlers fetch pages in order to answer live user questions.
+# Allowing them is what makes your pages eligible to be cited.
+
+# OpenAI — ChatGPT Search   &lt;-- currently blocked
+User-agent: OAI-SearchBot
+Allow: /
+
+# OpenAI — ChatGPT browsing
+User-agent: ChatGPT-User
+Allow: /
+
+# Anthropic — Claude search
+User-agent: Claude-SearchBot
+Allow: /
+
+# Anthropic — Claude browsing
+User-agent: Claude-User
+Allow: /
+
+# Perplexity — Perplexity   &lt;-- currently blocked
+User-agent: PerplexityBot
+Allow: /
+
+# Perplexity — Perplexity browsing
+User-agent: Perplexity-User
+Allow: /
+
+# Amazon — Alexa / Rufus
+User-agent: Amazonbot
+Allow: /
+
+# --- Model training ----------------------------------------------------
+# Uncomment to allow your content into model training data. This raises
+# unprompted brand recall, but the content is retained in model weights.
+
+# OpenAI — ChatGPT
+# User-agent: GPTBot
+# Allow: /
+
+# Anthropic — Claude
+# User-agent: ClaudeBot
+# Allow: /
+
+# Google — Gemini / AI Overviews grounding
+# User-agent: Google-Extended
+# Allow: /
+
+# Apple — Apple Intelligence
+# User-agent: Applebot-Extended
+# Allow: /
+
+# Meta — Meta AI
+# User-agent: meta-externalagent
+# Allow: /
+
+# Common Crawl — open datasets
+# User-agent: CCBot
+# Allow: /
+
+# ByteDance — Doubao / TikTok search
+# User-agent: Bytespider
+# Allow: /
+
+Sitemap: https://northwind.example/sitemap.xml
+</pre>
+  </div>
+  <div class="gen">
+    <h3>/llms.txt — create this file at your site root</h3>
+    
+    <pre># Pricing
+
+&gt; Simple usage-based pricing for Northwind Analytics. Start free, pay only for the events you track.
+
+This file follows the llms.txt convention: a curated, plain-Markdown map of
+this site for language models. Replace the placeholder links below with the
+pages you most want cited, newest and most authoritative first.
+
+## Core pages
+
+- [Home](https://northwind.example/): Overview of Pricing.
+- [About](https://northwind.example/about): Who is behind Pricing and why to trust it.
+- [Docs](https://northwind.example/docs): Reference documentation.
+
+## Topics covered on this page
+
+- [Plans](https://northwind.example/pricing): Section of Northwind Analytics — Pricing.
+- [What counts as an event?](https://northwind.example/pricing): Section of Northwind Analytics — Pricing.
+- [Do unused events roll over?](https://northwind.example/pricing): Section of Northwind Analytics — Pricing.
+- [Can I change plans mid-month?](https://northwind.example/pricing): Section of Northwind Analytics — Pricing.
+
+## Optional
+
+- [Changelog](https://northwind.example/changelog): Release history.
+</pre>
+  </div>
+  <div class="gen">
+    <h3>JSON-LD — paste inside &lt;head&gt;</h3>
+    <p class="note">Paste inside &lt;head&gt;. Replace every CHANGE-ME before shipping — and set datePublished and dateModified, which default to today because this page declares no date of its own.</p>
+    <pre>&lt;script type=&quot;application/ld+json&quot;&gt;
+{
+  &quot;@context&quot;: &quot;https://schema.org&quot;,
+  &quot;@graph&quot;: [
+    {
+      &quot;@type&quot;: &quot;Organization&quot;,
+      &quot;@id&quot;: &quot;https://northwind.example/#organization&quot;,
+      &quot;name&quot;: &quot;northwind.example&quot;,
+      &quot;url&quot;: &quot;https://northwind.example&quot;,
+      &quot;logo&quot;: &quot;https://northwind.example/logo.png&quot;,
+      &quot;sameAs&quot;: [
+        &quot;https://www.linkedin.com/company/CHANGE-ME&quot;,
+        &quot;https://x.com/CHANGE-ME&quot;
+      ]
+    },
+    {
+      &quot;@type&quot;: &quot;Article&quot;,
+      &quot;@id&quot;: &quot;https://northwind.example/pricing#article&quot;,
+      &quot;headline&quot;: &quot;Northwind Analytics — Pricing&quot;,
+      &quot;description&quot;: &quot;Simple usage-based pricing for Northwind Analytics. Start free, pay only for the events you track.&quot;,
+      &quot;url&quot;: &quot;https://northwind.example/pricing&quot;,
+      &quot;mainEntityOfPage&quot;: {
+        &quot;@id&quot;: &quot;https://northwind.example/pricing&quot;
+      },
+      &quot;datePublished&quot;: &quot;2026-01-01&quot;,
+      &quot;dateModified&quot;: &quot;2026-01-01&quot;,
+      &quot;author&quot;: {
+        &quot;@type&quot;: &quot;Person&quot;,
+        &quot;name&quot;: &quot;CHANGE-ME&quot;
+      },
+      &quot;publisher&quot;: {
+        &quot;@id&quot;: &quot;https://northwind.example/#organization&quot;
+      },
+      &quot;inLanguage&quot;: &quot;en&quot;
+    }
+  ]
+}
+&lt;/script&gt;</pre>
+  </div>
+  <div class="gen">
+    <h3>FAQPage schema</h3>
+    <p class="note">Built from 3 question heading(s). Answers are lifted from the page — review them before shipping.</p>
+    <pre>&lt;script type=&quot;application/ld+json&quot;&gt;
+{
+  &quot;@context&quot;: &quot;https://schema.org&quot;,
+  &quot;@type&quot;: &quot;FAQPage&quot;,
+  &quot;mainEntity&quot;: [
+    {
+      &quot;@type&quot;: &quot;Question&quot;,
+      &quot;name&quot;: &quot;What counts as an event?&quot;,
+      &quot;acceptedAnswer&quot;: {
+        &quot;@type&quot;: &quot;Answer&quot;,
+        &quot;text&quot;: &quot;An event is any single tracked user action, recorded once at the moment it happens. An event is any single tracked user action, recorded once at the moment it happens. An event is any single tracked user action, recorded once at the moment it happens. An event is any single tracked user action, recorded once at the moment it happens. An event is any single tracked user action, recorded once at the moment it happens. An event is any single tracked user action, recorded once at the moment it happe&quot;
+      }
+    },
+    {
+      &quot;@type&quot;: &quot;Question&quot;,
+      &quot;name&quot;: &quot;Do unused events roll over?&quot;,
+      &quot;acceptedAnswer&quot;: {
+        &quot;@type&quot;: &quot;Answer&quot;,
+        &quot;text&quot;: &quot;Unused volume does not roll over between billing periods, and overage is billed at the same per-event rate as the plan. Unused volume does not roll over between billing periods, and overage is billed at the same per-event rate as the plan. Unused volume does not roll over between billing periods, and overage is billed at the same per-event rate as the plan. Unused volume does not roll over between billing periods, and overage is billed at the same per-event rate as the plan. Unused volume does n&quot;
+      }
+    },
+    {
+      &quot;@type&quot;: &quot;Question&quot;,
+      &quot;name&quot;: &quot;Can I change plans mid-month?&quot;,
+      &quot;acceptedAnswer&quot;: {
+        &quot;@type&quot;: &quot;Answer&quot;,
+        &quot;text&quot;: &quot;You can move between plans at any time and the change is prorated to the day. You can move between plans at any time and the change is prorated to the day. You can move between plans at any time and the change is prorated to the day. You can move between plans at any time and the change is prorated to the day. You can move between plans at any time and the change is prorated to the day. You can move between plans at any time and the change is prorated to the day. You can move between plans at an&quot;
+      }
+    }
+  ]
+}
+&lt;/script&gt;</pre>
+  </div>
+
+  <footer>
+    Generated by Citable. Scoring weights are a judgement call, not an empirically
+    derived model; the underlying measurements are objective and reproducible.
+  </footer>
+
+</div>
+</body>
+</html>
